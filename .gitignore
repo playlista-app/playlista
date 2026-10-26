@@ -1,0 +1,4 @@
+# Personal library and local application state belong outside the app repository.
+/playlists/
+/data/
+/node_modules/

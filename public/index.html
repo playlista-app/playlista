@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f6f3">
+    <title>Playlista</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="stylesheet" href="/style.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Playlista home">
+          <span class="brand-mark" aria-hidden="true">♫</span>
+          <span>playlista</span>
+        </a>
+        <form id="librarySearchForm" class="global-search" role="search">
+          <span class="search-glyph" aria-hidden="true">⌕</span>
+          <input id="librarySearchInput" type="search" autocomplete="off" placeholder="Search playlists, songs, tags..." aria-label="Search all playlists and songs">
+          <button id="clearLibrarySearch" class="clear-search" type="button" aria-label="Clear library search" hidden>×</button>
+          <kbd>Ctrl K</kbd>
+        </form>
+        <div class="topbar-status" role="status" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><span id="saveStatus">Local files</span></div>
+      </header>
+
+      <main class="main-layout">
+        <aside class="sidebar" aria-label="Playlist library">
+          <div class="sidebar-heading">
+            <div>
+              <p class="eyebrow">YOUR LIBRARY</p>
+              <h2>Playlists <span id="playlistCount" class="count-pill">0</span></h2>
+            </div>
+            <button class="button button-small button-soft" id="newPlaylistButton" type="button" aria-label="Create playlist">
+              <span aria-hidden="true">+</span> New
+            </button>
+          </div>
+          <button id="homeButton" class="home-nav-button" type="button" title="Drop a playlist here to remove its parent">
+            <span aria-hidden="true">⌂</span> Overview
+          </button>
+          <nav id="playlistTree" class="playlist-tree" aria-label="Playlists"></nav>
+          <button id="settingsButton" class="home-nav-button settings-nav-button" type="button"><span aria-hidden="true">&#9881;</span> Settings</button>
+        </aside>
+        <div id="sidebarResizer" class="sidebar-resizer" role="separator" aria-label="Resize playlist menu" aria-orientation="vertical" aria-valuemin="220" aria-valuemax="520" tabindex="0"></div>
+
+        <section class="workspace">
+          <div id="issueBanner" class="issue-banner" hidden></div>
+
+          <section id="librarySearchView" class="library-search-view" hidden>
+            <header class="library-search-heading">
+              <p class="eyebrow">ACROSS YOUR LIBRARY</p>
+              <h1 id="librarySearchTitle">Search</h1>
+              <p id="librarySearchSummary" class="playlist-description" aria-live="polite"></p>
+              <p class="search-help">Try <code>tag:hype</code>, <code>description:emo</code>, <code>playlist:punk</code>, <code>artist:blink</code>, or <code>title:anthem</code>. Songs appear only under the playlist that owns them.</p>
+            </header>
+            <section id="playlistSearchSection" class="search-results-section" hidden>
+              <div class="section-title-row"><div><p class="eyebrow">PLAYLISTS</p><h2>Playlist matches <span id="playlistMatchCount" class="count-pill">0</span></h2></div></div>
+              <div id="playlistSearchResults" class="playlist-search-results"></div>
+            </section>
+            <section id="songSearchSection" class="search-results-section" hidden>
+              <div class="section-title-row"><div><p class="eyebrow">TRACKS IN PLAYLISTS</p><h2>Song matches <span id="songMatchCount" class="count-pill">0</span></h2></div></div>
+              <div id="songSearchResults" class="song-search-results"></div>
+            </section>
+            <p id="noLibraryMatches" class="no-library-matches" hidden>No matches. Try a title, artist, tag:hype, description:emo, or playlist name.</p>
+          </section>
+
+          <section id="homeView" class="home-view" hidden>
+            <header class="home-heading">
+              <p class="eyebrow">YOUR PLAYLISTS</p>
+              <h1>Your library</h1>
+            </header>
+            <div id="homeStats" class="overview-stats"></div>
+            <section class="home-section" aria-labelledby="homePlaylistsHeading">
+              <div class="section-title-row"><div><p class="eyebrow">COLLECTION</p><h2 id="homePlaylistsHeading">Playlists</h2></div></div>
+              <div id="homePlaylistGrid" class="home-playlist-grid"></div>
+            </section>
+            <section class="home-section tag-management-section" aria-labelledby="tagManagerHeading">
+              <div class="section-title-row"><div><p class="eyebrow">SHARED TAGS</p><h2 id="tagManagerHeading">Your tags <span id="homeTagCount" class="count-pill">0</span></h2></div></div>
+              <p class="tag-manager-hint">Select a tag to find related playlists and songs. Use its pen to rename it or change its display color.</p>
+              <div id="tagManager" class="tag-manager"></div>
+            </section>
+          </section>
+
+          <section id="settingsView" class="settings-view" hidden>
+            <header class="home-heading">
+              <p class="eyebrow">PREFERENCES</p>
+              <h1>Settings</h1>
+            </header>
+            <form id="settingsForm" class="settings-grid" novalidate>
+              <section class="settings-card">
+                <div class="settings-card-heading"><div><p class="eyebrow">LOCAL STORAGE</p><h2>Playlist folder</h2></div></div>
+                <label class="field field-wide">
+                  <span>Folder path</span>
+                  <input id="playlistDirectoryInput" name="playlistDirectory" autocomplete="off" spellcheck="false" required>
+                </label>
+                <p class="settings-path-note">Choose an existing folder on this computer.</p>
+              </section>
+              <section class="settings-card">
+                <div class="settings-card-heading">
+                  <div><p class="eyebrow">CLOUD BACKUP</p><h2>GitHub repository</h2></div>
+                  <div class="github-help">
+                    <button class="help-icon" type="button" aria-label="About GitHub authentication">?</button>
+                    <div class="github-help-tooltip" role="tooltip">Playlista uses GitHub CLI accounts on this computer. Install GitHub CLI and run <code>gh auth login</code> to add an account. Choose which account Playlista uses here; this does not change the CLI’s active account. A GitHub account with access to the selected repository is required.</div>
+                  </div>
+                </div>
+                <div class="settings-fields">
+                  <label class="field"><span>Owner</span><input id="githubOwnerInput" name="owner" autocomplete="off" placeholder="username or organization"></label>
+                  <label class="field"><span>Repository</span><input id="githubRepositoryInput" name="repository" autocomplete="off" placeholder="playlist-backup"></label>
+                  <label class="field"><span>Branch</span><input id="githubBranchInput" name="branch" autocomplete="off" value="main"></label>
+                </div>
+                <label class="settings-toggle"><input id="githubAutoSyncInput" type="checkbox"><span>Auto-sync to GitHub</span></label>
+                <p id="githubSyncSummary" class="settings-path-note" role="status" aria-live="polite"></p>
+                <div class="github-auth-row">
+                  <span id="githubAuthStatus" role="status">Not checked</span>
+                  <button id="chooseGithubAccountButton" class="button button-small button-soft" type="button">Choose account</button>
+                </div>
+                <div id="githubAccountPicker" class="github-account-picker" hidden>
+                  <p id="githubAccountMessage" class="settings-path-note"></p>
+                  <div id="githubAccountList" class="github-account-list" role="radiogroup" aria-label="GitHub CLI accounts"></div>
+                  <button id="acceptGithubAccountButton" class="button button-small button-primary" type="button" disabled>Use selected account</button>
+                </div>
+                <div class="github-auth-row github-connection-row">
+                  <span>Repository access</span>
+                  <button id="githubTestButton" class="button button-small button-soft" type="button">Check connection</button>
+                </div>
+                <div class="settings-sync-actions">
+                  <button id="saveSettingsButton" class="button button-primary" type="submit">Save settings</button>
+                  <button id="githubPullButton" class="button button-soft" type="button">Import from GitHub</button>
+                  <button id="githubPushButton" class="button button-soft" type="button">Save to GitHub</button>
+                </div>
+                <p id="syncResult" class="sync-result" role="status" aria-live="polite" hidden></p>
+                <div id="syncConflictActions" class="sync-conflict-actions" hidden>
+                  <button id="resolveWithGitHubButton" class="button button-small button-soft" type="button">Use GitHub versions</button>
+                  <button id="resolveWithLocalButton" class="button button-small button-soft" type="button">Use local versions</button>
+                </div>
+              </section>
+              <section class="settings-card spotify-settings-card">
+                <div class="settings-card-heading"><div><p class="eyebrow">MUSIC IMPORT</p><h2>Spotify</h2></div></div>
+                <label class="field field-wide">
+                  <span>Spotify Client ID</span>
+                  <input id="spotifyClientIdInput" name="spotifyClientId" autocomplete="off" spellcheck="false" placeholder="From your Spotify developer app">
+                </label>
+                <p class="settings-path-note">Create an app in the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Spotify Developer Dashboard</a> and add this redirect URI to its settings: <code id="spotifyRedirectUri">http://127.0.0.1:3000/spotify/callback</code>. Spotify Development Mode requires Premium on the app owner’s account. Playlista reads playlist data and does not edit Spotify.</p>
+                <div class="github-auth-row">
+                  <span id="spotifyAuthStatus" role="status">Not connected</span>
+                  <button id="spotifyConnectButton" class="button button-small button-primary" type="button">Connect Spotify</button>
+                  <button id="spotifyDisconnectButton" class="button button-small button-soft" type="button" hidden>Disconnect</button>
+                </div>
+                <div class="settings-sync-actions spotify-import-actions">
+                  <button id="spotifyLoadPlaylistsButton" class="button button-soft" type="button" disabled>Load playlists</button>
+                  <label class="spotify-destination"><span>Import into</span><select id="spotifyTargetPlaylistSelect"><option value="">New playlist with Spotify’s name</option></select></label>
+                </div>
+                <label class="field spotify-name-field">
+                  <span>New playlist name <small>(optional)</small></span>
+                  <input id="spotifyNewPlaylistName" autocomplete="off" placeholder="Uses the Spotify playlist name">
+                </label>
+                <label class="field spotify-search-field" hidden>
+                  <span>Find a Spotify playlist</span>
+                  <input id="spotifyPlaylistSearch" type="search" autocomplete="off" placeholder="Filter your playlists">
+                </label>
+                <div id="spotifyPlaylistList" class="spotify-playlist-list" aria-live="polite"></div>
+                <p id="spotifyImportStatus" class="sync-result" role="status" aria-live="polite" hidden></p>
+              </section>
+              <p id="settingsError" class="form-error settings-error" role="alert" hidden></p>
+            </form>
+          </section>
+
+          <section id="emptyState" class="empty-state" hidden>
+            <div class="empty-glyph" aria-hidden="true">♫</div>
+            <p class="eyebrow">A library that belongs to you</p>
+            <h1>Start with a playlist.</h1>
+            <p class="empty-copy">Create a playlist, add a few song searches, and connect related playlists with parent relationships.</p>
+            <button class="button button-primary" id="emptyCreateButton" type="button">Create your first playlist <span aria-hidden="true">→</span></button>
+          </section>
+
+          <section id="playlistView" class="playlist-view" hidden>
+            <header class="playlist-header">
+              <div class="playlist-title-row">
+                <div>
+                  <p class="eyebrow" id="playlistFileLabel"></p>
+                  <h1 id="playlistName"></h1>
+                </div>
+                <button id="playlistEditButton" class="button button-small button-soft" type="button" aria-label="Edit playlist">
+                  <span aria-hidden="true">&#9998;</span> Edit
+                </button>
+              </div>
+              <p id="playlistDescription" class="playlist-description" hidden></p>
+              <div id="playlistMeta" class="metadata-row"></div>
+            </header>
+
+            <section class="song-composer" aria-labelledby="addSongHeading">
+              <div class="composer-heading">
+                <div>
+                  <p class="eyebrow">QUICK ADD</p>
+                  <h2 id="addSongHeading">Add a song</h2>
+                </div>
+              </div>
+              <form id="quickAddForm" novalidate>
+                <div class="quick-add-control">
+                  <div id="quickAddEditor" class="quick-add-editor" role="group" aria-label="Song properties"></div>
+                  <button id="quickAddButton" class="quick-add-submit" type="submit" aria-label="Add song" title="Add song"><span aria-hidden="true">&#8629;</span></button>
+                </div>
+                <p class="composer-hint">Type the song first. Tab cycles through Song, Artist, and Tags; Shift+Tab goes back. A comma commits a tag.</p>
+                <p id="quickAddError" class="form-error" role="alert" hidden></p>
+              </form>
+            </section>
+
+            <section class="songs-section" aria-labelledby="songsHeading">
+              <div class="section-title-row">
+                <div>
+                  <p class="eyebrow">PLAYLIST TRACKS</p>
+                  <h2 id="songsHeading">Songs <span id="songCount" class="count-pill">0</span></h2>
+                </div>
+              </div>
+              <ol id="songList" class="song-list"></ol>
+              <div id="noSongs" class="no-songs" hidden>
+                <span aria-hidden="true">♪</span>
+                <p>No songs yet. Add a search above to start the list.</p>
+              </div>
+            </section>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="editPlaylistDialog" class="dialog-card">
+      <form id="editPlaylistForm" novalidate>
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">PLAYLIST DETAILS</p>
+            <h2>Edit playlist</h2>
+          </div>
+          <button class="icon-button" type="button" data-close="editPlaylistDialog" aria-label="Close">×</button>
+        </div>
+        <div class="form-grid">
+          <label class="field field-wide">
+            <span>Playlist name</span>
+            <input name="name" autocomplete="off" required>
+          </label>
+          <label class="field field-wide">
+            <span>Parent playlist <span class="optional">optional</span></span>
+            <select name="parent"><option value="">No parent playlist</option></select>
+          </label>
+          <label class="field field-wide">
+            <span>Description <span class="optional">optional</span></span>
+            <input name="description" autocomplete="off" placeholder="What makes this playlist yours?">
+          </label>
+          <label class="field field-wide">
+            <span>Playlist tags <span class="optional">optional</span></span>
+            <input name="tags" autocomplete="off" placeholder="punk, energetic">
+            <small>Separate tags with commas.</small>
+          </label>
+        </div>
+        <p id="editPlaylistFormError" class="form-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button class="button button-quiet" type="button" data-close="editPlaylistDialog">Cancel</button>
+          <button class="button button-primary" type="submit">Save changes</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="playlistDialog" class="dialog-card">
+      <form id="playlistForm" novalidate>
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">NEW IN YOUR LIBRARY</p>
+            <h2>Create playlist</h2>
+          </div>
+          <button class="icon-button" type="button" data-close="playlistDialog" aria-label="Close">×</button>
+        </div>
+        <div class="form-grid">
+          <label class="field field-wide">
+            <span>Playlist name</span>
+            <input name="name" autocomplete="off" required placeholder="e.g. 90s Punk">
+          </label>
+          <label class="field field-wide">
+            <span>Parent playlist <span class="optional">optional</span></span>
+            <select name="parent">
+              <option value="">No parent playlist</option>
+            </select>
+            <small>The playlist appears beneath its parent. Browsing the parent shows this playlist's songs too.</small>
+          </label>
+          <label class="field field-wide">
+            <span>Description <span class="optional">optional</span></span>
+            <input name="description" autocomplete="off" placeholder="What makes this playlist yours?">
+          </label>
+          <label class="field field-wide">
+            <span>Playlist tags <span class="optional">optional</span></span>
+            <input name="tags" autocomplete="off" placeholder="punk, energetic">
+            <small>Separate tags with commas.</small>
+          </label>
+        </div>
+        <p id="playlistFormError" class="form-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button class="button button-quiet" type="button" data-close="playlistDialog">Cancel</button>
+          <button class="button button-primary" type="submit">Create playlist</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>
