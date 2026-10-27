@@ -84,7 +84,7 @@ async function githubRequest(url, options = {}, login) {
   if (!response.ok) {
     const detail = await response.json().then((value) => value.message || '').catch(() => '');
     const message = response.status === 401 ? 'GitHub authentication expired. Run gh auth login again.'
-      : response.status === 403 ? 'GitHub denied access. Check that the selected account has Contents read and write access.'
+      : response.status === 403 ? (url.endsWith('/user/repos') ? 'GitHub denied repository creation. The selected account needs permission to create private repositories.' : 'GitHub denied access. Check that the selected account has Contents read and write access.')
         : `GitHub request failed (${response.status})${detail ? `: ${detail}` : '.'}`;
     throw Object.assign(new Error(message), { statusCode: response.status === 401 ? 401 : 400, githubStatus: response.status, githubMessage: detail });
   }
@@ -95,15 +95,16 @@ function createGitHubService({ storage = store, settings = appSettings, request 
   const blobCache = new Map();
   function configuration(required = false) {
     const github = settings.getRawSettings().github;
-    const config = { ...github, directory: storage.getPlaylistsDirectory() };
-    if (required && (!config.owner || !config.repository || !config.login)) {
-      throw Object.assign(new Error('Set the GitHub owner, repository, and account in Settings first.'), { statusCode: 400 });
+    const config = { ...github, owner: github.owner || github.login || '', repository: github.repository || 'playlista-playlists',
+      branch: github.branch || 'main', requestedBranch: github.branch || '', directory: storage.getPlaylistsDirectory() };
+    if (required && !config.login) {
+      throw Object.assign(new Error('Choose a GitHub account in Settings first.'), { statusCode: 400 });
     }
     return config;
   }
 
   function stateKey(config) {
-    return JSON.stringify([config.owner.toLowerCase(), config.repository.toLowerCase(), config.branch, config.directory]);
+    return JSON.stringify([config.owner.toLowerCase(), config.repository.toLowerCase(), config.requestedBranch || '@default', config.directory]);
   }
 
   function loadState(config) {
@@ -121,10 +122,30 @@ function createGitHubService({ storage = store, settings = appSettings, request 
     state.remote[file] = hash;
   }
 
-  async function remotePlaylists(config) {
+  async function remotePlaylists(config, { createIfMissing = false } = {}) {
     const repositoryPath = `/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repository)}`;
     const api = (suffix = '', options) => request(`${API_ROOT}${repositoryPath}${suffix}`, options, config.login);
-    const repository = await api();
+    let repository;
+    try { repository = await api(); }
+    catch (error) {
+      if (error.githubStatus !== 404 || !createIfMissing) throw error;
+      if (config.owner.toLowerCase() !== config.login.toLowerCase()) {
+        throw Object.assign(new Error('Automatic repository creation uses the selected account. Clear the owner override, or create this repository yourself.'), { statusCode: 400 });
+      }
+      const user = await request(`${API_ROOT}/user`, {}, config.login);
+      if (user.login?.toLowerCase() !== config.login.toLowerCase()) throw Object.assign(new Error('The GitHub token belongs to a different account. Select the account again.'), { statusCode: 401 });
+      try {
+        repository = await request(`${API_ROOT}/user/repos`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: config.repository, private: true, auto_init: false, description: 'My portable Playlista playlists' }),
+        }, config.login);
+        if (repository.private !== true) throw Object.assign(new Error('GitHub did not confirm a private repository. No playlists were uploaded.'), { statusCode: 409 });
+      } catch (creationError) {
+        if (creationError.githubStatus !== 422) throw creationError;
+        repository = await api(); // Another sync/client may have created it in the meantime.
+      }
+    }
+    if (!config.requestedBranch) config.branch = repository.default_branch || 'main';
     let branch;
     try {
       branch = await api(`/branches/${encodeURIComponent(config.branch)}`);
@@ -233,9 +254,9 @@ function createGitHubService({ storage = store, settings = appSettings, request 
     };
   }
 
-  async function checkStatus() {
+  async function checkStatus(options) {
     const config = configuration(true);
-    const [remote, records] = await Promise.all([remotePlaylists(config), storage.readPlaylistFiles(config.directory)]);
+    const [remote, records] = await Promise.all([remotePlaylists(config, options), storage.readPlaylistFiles(config.directory)]);
     const state = loadState(config);
     observe(state, remote, new Map(records.map((record) => [record.file, record.text])));
     await saveState(config, state);
@@ -246,8 +267,9 @@ function createGitHubService({ storage = store, settings = appSettings, request 
     if (!['pull', 'push', 'both', 'auto'].includes(direction)) throw Object.assign(new Error('Unknown sync direction.'), { statusCode: 400 });
     if (file !== undefined && (typeof file !== 'string' || !file)) throw Object.assign(new Error('Choose a playlist to sync.'), { statusCode: 400 });
     const config = configuration(true);
-    const [remote, validation] = await Promise.all([remotePlaylists(config), storage.validateDirectory(config.directory)]);
+    const validation = await storage.validateDirectory(config.directory);
     if (validation.issues.length) throw Object.assign(new Error('Fix playlist validation errors before syncing.'), { statusCode: 409 });
+    const remote = await remotePlaylists(config, { createIfMissing: direction !== 'pull' });
     const local = new Map(validation.records.map((record) => [record.file, record.text]));
     const state = loadState(config);
     observe(state, remote, local);
@@ -361,7 +383,7 @@ function createGitHubService({ storage = store, settings = appSettings, request 
     } finally { await saveState(config, state); }
   }
 
-  return { getStatus, checkStatus, testConnection: checkStatus, sync, resolveConflicts };
+  return { getStatus, checkStatus, testConnection: () => checkStatus({ createIfMissing: true }), sync, resolveConflicts };
 }
 
 module.exports = { ...createGitHubService(), listAccounts, selectAccount, createGitHubService, countChanges };

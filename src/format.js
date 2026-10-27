@@ -125,9 +125,10 @@ function parseTrackLine(raw, source, line) {
   if (parts.some((part) => !part)) throw new Error('track query contains an empty part');
 
   let tags = [];
+  // Square brackets inside quoted artist/title values are literal text.
   const bracketParts = parts
     .map((part, index) => ({ part, index }))
-    .filter(({ part }) => part.includes('[') || part.includes(']'));
+    .filter(({ part }) => splitOutside(part, '[', false).length > 1 || splitOutside(part, ']', false).length > 1);
   if (bracketParts.length) {
     if (bracketParts.length !== 1 || bracketParts[0].index !== parts.length - 1) {
       throw new Error('a tag list must be the final part of a track query');

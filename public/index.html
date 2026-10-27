@@ -8,6 +8,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/style.css">
     <script src="/playlist-ui.js" defer></script>
+    <script src="/music-import-ui.js" defer></script>
     <script src="/youtube-ui.js" defer></script>
     <script src="/youtube-export-ui.js" defer></script>
     <script src="/app.js" defer></script>
@@ -31,13 +32,15 @@
       <main class="main-layout">
         <aside class="sidebar" aria-label="Playlist library">
           <div class="sidebar-heading">
-            <div>
-              <p class="eyebrow">YOUR LIBRARY</p>
-              <h2>Playlists <span id="playlistCount" class="count-pill">0</span></h2>
+            <h2>Playlists <span id="playlistCount" class="count-pill">0</span></h2>
+            <div class="library-actions" role="group" aria-label="Add playlists">
+              <button class="button button-small button-primary" id="newPlaylistButton" type="button" aria-label="Create playlist">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg> New
+              </button>
+              <button id="importButton" class="button button-small button-soft" type="button">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2v10m-4-4 4 4 4-4M3 12v5h14v-5"/></svg> Import
+              </button>
             </div>
-            <button class="button button-small button-soft" id="newPlaylistButton" type="button" aria-label="Create playlist">
-              <span aria-hidden="true">+</span> New
-            </button>
           </div>
           <button id="homeButton" class="home-nav-button" type="button" title="Drop a playlist here to remove its parent">
             <span aria-hidden="true">⌂</span> Overview
@@ -85,6 +88,72 @@
             </section>
           </section>
 
+          <section id="importView" class="import-view" hidden>
+            <header class="home-heading"><h1>Import playlists</h1></header>
+            <div class="import-provider-tabs import-source-tabs" role="tablist" aria-label="Import from a music service">
+              <button id="youtubeImportTab" type="button" role="tab" aria-controls="youtubeImportPanel" aria-selected="true">YouTube Music</button>
+              <button id="spotifyImportTab" type="button" role="tab" aria-controls="spotifyImportPanel" aria-selected="false" tabindex="-1">Spotify</button>
+            </div>
+            <div class="settings-card import-card">
+              <section id="youtubeImportPanel" class="import-service-panel" role="tabpanel" aria-labelledby="youtubeImportTab">
+                <p id="youtubeImportAccountStatus" class="import-account-status" hidden></p>
+                <div id="youtubeImportUnavailable" class="import-unavailable"><button id="youtubeImportConnectButton" type="button" class="button button-primary">Connect YouTube Music</button></div>
+                <div id="youtubeImportControls" class="music-import-flow" hidden>
+                  <h3 class="import-step-heading"><span>1</span>Choose a playlist</h3>
+                  <div class="import-source-tabs" role="group" aria-label="YouTube Music import source">
+                    <button id="youtubeSourceLibraryTab" type="button" aria-pressed="true">Your library</button>
+                    <button id="youtubeSourceUrlTab" type="button" aria-pressed="false">Playlist link</button>
+                  </div>
+                  <div id="youtubeLibraryPanel">
+                    <button id="youtubeLoadButton" class="button button-small button-soft" type="button">Browse playlists</button>
+                    <label class="field spotify-search-field" id="youtubeFilterField" hidden><span>Find a playlist</span><input id="youtubeFilterInput" type="search" autocomplete="off" placeholder="Filter your YouTube Music playlists"></label>
+                    <div id="youtubePlaylistList" class="spotify-playlist-list" aria-live="polite"></div>
+                  </div>
+                  <div id="youtubeUrlPanel" hidden><label class="field"><span>Playlist URL or ID</span><input id="youtubeUrlInput" autocomplete="off" placeholder="https://music.youtube.com/playlist?list=..."></label></div>
+                  <div id="youtubeDestinationPanel" class="import-destination-panel" hidden>
+                    <h3 class="import-step-heading"><span>2</span>Save to your library</h3>
+                    <div class="import-destination-choice">
+                      <label><input id="youtubeNewDestination" type="radio" name="youtubeDestination" value="new" checked>New playlist</label>
+                      <label><input id="youtubeExistingDestination" type="radio" name="youtubeDestination" value="existing">Add to existing</label>
+                    </div>
+                    <label class="field spotify-name-field" id="youtubeNameField"><span>Playlist name</span><input id="youtubeNewNameInput" autocomplete="off" placeholder="Uses the source playlist name"></label>
+                    <label class="field" id="youtubeTargetField" hidden><span>Destination playlist</span><select id="youtubeTargetSelect"><option value="">Choose a playlist</option></select></label>
+                    <button id="youtubeImportButton" type="button" class="button button-primary import-submit" disabled>Import playlist</button>
+                  </div>
+                </div>
+                <p id="youtubeResult" class="sync-result" role="status" aria-live="polite" hidden></p>
+              </section>
+              <section id="spotifyImportPanel" class="import-service-panel" role="tabpanel" aria-labelledby="spotifyImportTab" hidden>
+                <p id="spotifyImportAccountStatus" class="import-account-status" hidden></p>
+                <div id="spotifyImportUnavailable" class="import-unavailable"><button id="spotifyImportConnectButton" type="button" class="button button-primary">Connect Spotify</button></div>
+                <div id="spotifyImportControls" class="music-import-flow" hidden>
+                  <h3 class="import-step-heading"><span>1</span>Choose a playlist</h3>
+                  <div class="import-source-tabs" role="group" aria-label="Spotify import source">
+                    <button id="spotifySourceLibraryTab" type="button" aria-pressed="true">Your library</button>
+                    <button id="spotifySourceUrlTab" type="button" aria-pressed="false">Playlist link</button>
+                  </div>
+                  <div id="spotifyLibraryPanel">
+                    <button id="spotifyLoadButton" class="button button-small button-soft" type="button">Browse playlists</button>
+                    <label class="field spotify-search-field" id="spotifyFilterField" hidden><span>Find a playlist</span><input id="spotifyFilterInput" type="search" autocomplete="off" placeholder="Filter your Spotify playlists"></label>
+                    <div id="spotifyPlaylistList" class="spotify-playlist-list" aria-live="polite"></div>
+                  </div>
+                  <div id="spotifyUrlPanel" hidden><label class="field"><span>Playlist URL or ID</span><input id="spotifyUrlInput" autocomplete="off" placeholder="https://open.spotify.com/playlist/..."></label></div>
+                  <div id="spotifyDestinationPanel" class="import-destination-panel" hidden>
+                    <h3 class="import-step-heading"><span>2</span>Save to your library</h3>
+                    <div class="import-destination-choice">
+                      <label><input id="spotifyNewDestination" type="radio" name="spotifyDestination" value="new" checked>New playlist</label>
+                      <label><input id="spotifyExistingDestination" type="radio" name="spotifyDestination" value="existing">Add to existing</label>
+                    </div>
+                    <label class="field spotify-name-field" id="spotifyNameField"><span>Playlist name</span><input id="spotifyNewNameInput" autocomplete="off" placeholder="Uses the source playlist name"></label>
+                    <label class="field" id="spotifyTargetField" hidden><span>Destination playlist</span><select id="spotifyTargetSelect"><option value="">Choose a playlist</option></select></label>
+                    <button id="spotifyImportButton" type="button" class="button button-primary import-submit" disabled>Import playlist</button>
+                  </div>
+                </div>
+                <p id="spotifyResult" class="sync-result" role="status" aria-live="polite" hidden></p>
+              </section>
+            </div>
+          </section>
+
           <section id="settingsView" class="settings-view" hidden>
             <header class="home-heading">
               <p class="eyebrow">PREFERENCES</p>
@@ -107,11 +176,6 @@
                     <div class="github-help-tooltip" role="tooltip">Playlista uses GitHub CLI accounts on this computer. Install GitHub CLI and run <code>gh auth login</code> to add an account. Choose which account Playlista uses here; this does not change the CLI’s active account. A GitHub account with access to the selected repository is required.</div>
                   </div>
                 </div>
-                <div class="settings-fields">
-                  <label class="field"><span>Owner</span><input id="githubOwnerInput" name="owner" autocomplete="off" placeholder="username or organization"></label>
-                  <label class="field"><span>Repository</span><input id="githubRepositoryInput" name="repository" autocomplete="off" placeholder="playlist-backup"></label>
-                  <label class="field"><span>Branch</span><input id="githubBranchInput" name="branch" autocomplete="off" value="main"></label>
-                </div>
                 <label class="settings-toggle"><input id="githubAutoSyncInput" type="checkbox"><span>Auto-sync to GitHub</span></label>
                 <p id="githubSyncSummary" class="settings-path-note" role="status" aria-live="polite"></p>
                 <div class="github-auth-row">
@@ -123,9 +187,18 @@
                   <div id="githubAccountList" class="github-account-list" role="radiogroup" aria-label="GitHub CLI accounts"></div>
                   <button id="acceptGithubAccountButton" class="button button-small button-primary" type="button" disabled>Use selected account</button>
                 </div>
+                <a id="githubRepositoryLink" class="github-repository-link" target="_blank" rel="noopener noreferrer" hidden></a>
+                <details id="githubAdvanced" class="settings-advanced">
+                  <summary>Advanced</summary>
+                  <div class="settings-fields">
+                    <label class="field"><span>Owner override</span><input id="githubOwnerInput" name="owner" autocomplete="off" placeholder="Selected account"></label>
+                    <label class="field"><span>Repository name</span><input id="githubRepositoryInput" name="repository" autocomplete="off" placeholder="playlista-playlists"></label>
+                    <label class="field"><span>Branch</span><input id="githubBranchInput" name="branch" autocomplete="off" placeholder="Repository default"></label>
+                  </div>
+                </details>
                 <div class="github-auth-row github-connection-row">
                   <span>Repository access</span>
-                  <button id="githubTestButton" class="button button-small button-soft" type="button">Check connection</button>
+                  <button id="githubTestButton" class="button button-small button-soft" type="button">Connect backup</button>
                 </div>
                 <div class="settings-sync-actions">
                   <button id="saveSettingsButton" class="button button-primary" type="submit">Save settings</button>
@@ -139,7 +212,7 @@
                 </div>
               </section>
               <section class="settings-card youtube-settings-card">
-                <div class="settings-card-heading"><div><p class="eyebrow">IMPORT &amp; EXPORT</p><h2>YouTube Music</h2></div></div>
+                <div class="settings-card-heading"><div><p class="eyebrow">CONNECTION</p><h2>YouTube Music</h2></div></div>
                 <p id="youtubeRuntimeStatus" class="settings-path-note" role="status"></p>
                 <div class="github-auth-row">
                   <span id="youtubeAccountStatus" role="status">Not connected</span>
@@ -157,44 +230,30 @@
                     <button id="youtubeAcceptButton" type="button" class="button button-small button-primary">Use this account</button>
                   </div>
                 </details>
-                <div id="youtubeImportControls" hidden>
-                  <div class="settings-sync-actions spotify-import-actions">
-                    <button id="youtubeLoadButton" class="button button-soft" type="button">Load playlists</button>
-                    <label class="spotify-destination"><span>Import into</span><select id="youtubeTargetSelect"><option value="">New playlist</option></select></label>
-                  </div>
-                  <label class="field spotify-name-field"><span>New playlist name <span class="optional">optional</span></span><input id="youtubeNewNameInput" autocomplete="off" placeholder="Uses the YouTube Music playlist name"></label>
-                  <div class="youtube-direct-import"><label class="field"><span>Playlist URL or ID</span><input id="youtubeUrlInput" autocomplete="off" placeholder="https://music.youtube.com/playlist?list=…"></label><button id="youtubeImportUrlButton" type="button" class="button button-soft">Import</button></div>
-                  <label class="field spotify-search-field" id="youtubeFilterField" hidden><span>Find a playlist</span><input id="youtubeFilterInput" type="search" autocomplete="off" placeholder="Filter your YouTube Music playlists"></label>
-                  <div id="youtubePlaylistList" class="spotify-playlist-list" aria-live="polite"></div>
-                </div>
-                <p id="youtubeResult" class="sync-result" role="status" aria-live="polite" hidden></p>
+                <button id="youtubeOpenImportButton" type="button" class="button button-small button-soft connection-import-link" hidden>Import playlists</button>
+                <p id="youtubeConnectionResult" class="sync-result" role="status" aria-live="polite" hidden></p>
               </section>
               <section class="settings-card spotify-settings-card">
-                <div class="settings-card-heading"><div><p class="eyebrow">MUSIC IMPORT</p><h2>Spotify</h2></div></div>
-                <label class="field field-wide">
-                  <span>Spotify Client ID</span>
-                  <input id="spotifyClientIdInput" name="spotifyClientId" autocomplete="off" spellcheck="false" placeholder="From your Spotify developer app">
-                </label>
-                <p class="settings-path-note">Create an app in the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Spotify Developer Dashboard</a> and add this redirect URI to its settings: <code id="spotifyRedirectUri">http://127.0.0.1:43817/spotify/callback</code>. Spotify Development Mode requires Premium on the app owner’s account. Playlista reads playlist data and does not edit Spotify.</p>
+                <div class="settings-card-heading"><div><p class="eyebrow">CONNECTION</p><h2>Spotify</h2></div></div>
+                <p id="spotifyRuntimeStatus" class="settings-path-note" role="status"></p>
                 <div class="github-auth-row">
-                  <span id="spotifyAuthStatus" role="status">Not connected</span>
-                  <button id="spotifyConnectButton" class="button button-small button-primary" type="button">Connect Spotify</button>
-                  <button id="spotifyDisconnectButton" class="button button-small button-soft" type="button" hidden>Disconnect</button>
+                  <span id="spotifyAccountStatus" role="status">Not connected</span>
+                  <button id="spotifyDisconnectButton" type="button" class="button button-small button-soft" hidden>Disconnect</button>
                 </div>
-                <div class="settings-sync-actions spotify-import-actions">
-                  <button id="spotifyLoadPlaylistsButton" class="button button-soft" type="button" disabled>Load playlists</button>
-                  <label class="spotify-destination"><span>Import into</span><select id="spotifyTargetPlaylistSelect"><option value="">New playlist with Spotify’s name</option></select></label>
-                </div>
-                <label class="field spotify-name-field">
-                  <span>New playlist name <small>(optional)</small></span>
-                  <input id="spotifyNewPlaylistName" autocomplete="off" placeholder="Uses the Spotify playlist name">
-                </label>
-                <label class="field spotify-search-field" hidden>
-                  <span>Find a Spotify playlist</span>
-                  <input id="spotifyPlaylistSearch" type="search" autocomplete="off" placeholder="Filter your playlists">
-                </label>
-                <div id="spotifyPlaylistList" class="spotify-playlist-list" aria-live="polite"></div>
-                <p id="spotifyImportStatus" class="sync-result" role="status" aria-live="polite" hidden></p>
+                <details id="spotifyConnectionDetails">
+                  <summary>Connect a Spotify account</summary>
+                  <p class="settings-path-note">Sign in to <a href="https://open.spotify.com" target="_blank" rel="noopener noreferrer">Spotify's web player</a> with the account you want to use. Open developer tools (F12), then Application → Cookies → open.spotify.com. Copy the value of <code>sp_dc</code>. In Firefox, use Storage → Cookies.</p>
+                  <p class="settings-path-note">This cookie grants account access. It stays on this computer. SpotAPI uses your browser session; no developer app or Client ID is needed.</p>
+                  <label class="field"><span>Spotify session cookie</span><textarea id="spotifyCookiesInput" rows="3" autocomplete="off" spellcheck="false" placeholder="Paste sp_dc value, Cookie header, or cookies JSON"></textarea></label>
+                  <div class="settings-sync-actions"><button id="spotifyCheckButton" class="button button-soft" type="button">Check account</button></div>
+                  <div id="spotifyAccountPreview" class="spotify-account-preview" hidden>
+                    <strong id="spotifyPreviewName"></strong>
+                    <label class="settings-toggle" id="spotifyRememberLabel"><input id="spotifyRememberInput" type="checkbox" checked><span>Remember on this computer (Windows encrypted)</span></label>
+                    <button id="spotifyAcceptButton" type="button" class="button button-small button-primary">Use this account</button>
+                  </div>
+                </details>
+                <button id="spotifyOpenImportButton" type="button" class="button button-small button-soft connection-import-link" hidden>Import playlists</button>
+                <p id="spotifyConnectionResult" class="sync-result" role="status" aria-live="polite" hidden></p>
               </section>
               <p id="settingsError" class="form-error settings-error" role="alert" hidden></p>
             </form>
@@ -216,6 +275,22 @@
             </div>
           </section>
 
+          <section id="spotifyExportView" class="youtube-export-view" aria-labelledby="spotifyExportHeading" hidden>
+            <header class="home-heading"><p class="eyebrow">SPOTIFY EXPORT</p><h1 id="spotifyExportHeading">Export</h1></header>
+            <p id="spotifyExportProgress" class="playlist-description" role="status" aria-live="polite"></p>
+            <div id="spotifyExportStats" class="overview-stats"></div>
+            <p id="spotifyExportError" class="form-error" role="alert" hidden></p>
+            <div id="spotifyExportResult" class="sync-result" role="status" hidden></div>
+            <div class="youtube-export-toolbar">
+              <label class="spotify-destination"><span>Show</span><select id="spotifyExportFilter"><option value="all">All songs</option><option value="matched">Matched</option><option value="skipped">Skipped / not found</option></select></label>
+              <button id="spotifyExportCancel" type="button" class="button button-quiet">Cancel export</button>
+            </div>
+            <div id="spotifyExportRows" class="youtube-export-rows"></div>
+            <div id="spotifyExportPagination" class="youtube-export-pagination" hidden>
+              <button id="spotifyExportPrevious" type="button" class="button button-small button-soft">Previous</button><span id="spotifyExportPage" role="status"></span><button id="spotifyExportNext" type="button" class="button button-small button-soft">Next</button>
+            </div>
+          </section>
+
           <section id="emptyState" class="empty-state" hidden>
             <div class="empty-glyph" aria-hidden="true">♫</div>
             <p class="eyebrow">A library that belongs to you</p>
@@ -232,7 +307,8 @@
                   <div class="playlist-name-row"><h1 id="playlistName"></h1><span id="songCount" class="count-pill playlist-track-count">0</span></div>
                 </div>
                 <div class="playlist-header-actions">
-                  <button id="youtubeExportButton" class="button button-small button-soft" type="button">Export to YouTube Music</button>
+                  <button id="youtubeExportButton" class="service-export-button youtube-export-icon" type="button" aria-label="Export to YouTube Music" title="Export to YouTube Music" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="5" fill="currentColor"/><path d="m10 9 6 3-6 3z" fill="white"/></svg></button>
+                  <button id="spotifyExportButton" class="service-export-button spotify-export-icon" type="button" aria-label="Export to Spotify" title="Export to Spotify" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor"/><g fill="none" stroke="white" stroke-linecap="round"><path d="M6 9c4-1.5 8-1.1 12 1" stroke-width="1.8"/><path d="M7 12c3.4-1.1 6.6-.8 10 1" stroke-width="1.6"/><path d="M8 15c2.7-.8 5.3-.5 8 1" stroke-width="1.4"/></g></svg></button>
                   <button id="playlistSyncButton" class="button button-small button-primary" type="button" hidden>Sync</button>
                   <button id="playlistEditButton" class="button button-small button-soft" type="button" aria-label="Edit playlist">
                     <span aria-hidden="true">&#9998;</span> Edit

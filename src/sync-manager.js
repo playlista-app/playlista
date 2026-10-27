@@ -45,7 +45,7 @@ function createSyncManager({ service = github, settings = appSettings, debounceM
 
   function notifyLocalChange() {
     const config = settings.getRawSettings().github;
-    if (stopped || config.autoSync !== true || !config.owner || !config.repository || !config.login) return;
+    if (stopped || config.autoSync !== true || !config.login) return;
     cancelScheduledSync();
     debounce = setTimeout(() => {
       debounce = null;

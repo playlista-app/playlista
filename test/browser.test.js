@@ -65,7 +65,7 @@ async function connect(url) {
       return result.result.value;
     },
     async key(key, code, windowsVirtualKeyCode) {
-      await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode, ...(key.length === 1 ? { text: key } : {}) });
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode, ...(key === 'Enter' ? { text: '\r' } : key.length === 1 ? { text: key } : {}) });
       await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode });
     },
   };
@@ -88,6 +88,8 @@ test('playlist controls remain usable while scrolling, typing, searching and syn
   Object.assign(process.env, overrides);
   const fixture = serializePlaylist({ name: 'Punk', created: new Date(Date.now() - 24 * 3600000).toISOString(), updated: new Date(Date.now() - 2 * 3600000).toISOString() });
   await fs.writeFile(path.join(libraryDirectory, 'punk.lista'), fixture + Array.from({ length: 60 }, (_, index) => `Artist ${index} > Song ${index}`).join('\n') + '\n');
+  await fs.writeFile(path.join(libraryDirectory, 'punk-90s.lista'), serializePlaylist({ name: '90s Punk', parent: 'Punk', created: new Date().toISOString(), updated: new Date().toISOString() }));
+  await fs.writeFile(path.join(libraryDirectory, 'green-day.lista'), serializePlaylist({ name: 'Green Day', parent: '90s Punk', created: new Date().toISOString(), updated: new Date().toISOString() }));
   for (let index = 0; index < 36; index += 1) {
     const text = serializePlaylist({ name: `Shelf ${String(index).padStart(2, '0')}`, created: new Date().toISOString(), updated: new Date().toISOString() });
     await fs.writeFile(path.join(libraryDirectory, `shelf-${index}.lista`), text);
@@ -98,6 +100,7 @@ test('playlist controls remain usable while scrolling, typing, searching and syn
   let stage = 'launch';
   let browserLog = '';
   const youtubeCalls = [];
+  const spotifyCalls = [];
   try {
     const youtube = require('../src/youtube').createYouTubeService({
       credentialFile: path.join(directory, 'youtube.json'), platform: 'win32',
@@ -119,7 +122,24 @@ test('playlist controls remain usable while scrolling, typing, searching and syn
         throw new Error(`Unexpected ${input.action}`);
       },
     });
-    const running = await require('../src/server').startServer({ port: 0, youtube });
+    const spotify = require('../src/spotify').createSpotifyService({
+      credentialFile: path.join(directory, 'spotify.json'), platform: 'win32',
+      resolveRequest: async () => new Response(null, { status: 302, headers: { location: 'https://open.spotify.com/playlist/0123456789abcdefghijkl' } }),
+      bridge: async (input) => {
+        spotifyCalls.push(input);
+        if (input.action === 'probe') return { version: 'test' };
+        if (input.action === 'connect') return { auth: { cookies: { sp_dc: 'synthetic-spotify-secret' } }, account: { id: 'personal-spotify', name: 'Personal Spotify' } };
+        if (input.action === 'seal') return 'encrypted-spotify-test';
+        if (input.action === 'playlists') return [{ id: '0123456789abcdefghijkl', name: 'Followed Spotify', total: 2 }, { id: 'abcdefghijkl0123456789', name: 'Another Spotify', total: 1 }];
+        if (input.action === 'playlist') return { name: input.id === '0123456789abcdefghijkl' ? 'Followed Spotify' : 'Another Spotify', description: 'Spotify description', songs: [
+          { artist: 'Green Day', title: 'Basket Case' }, { artist: 'Green Day', title: 'Basket Case' },
+        ], skipped: 1 };
+        if (input.action === 'search_batch') return input.queries.map((query) => ({ query, matches: [{ id: '0123456789abcdefghijkl', artist: 'Green Day', title: 'Basket Case' }] }));
+        if (input.action === 'create') return { id: 'abcdefghijkl0123456789', added: input.ids.length, complete: true };
+        throw new Error(`Unexpected ${input.action}`);
+      },
+    });
+    const running = await require('../src/server').startServer({ port: 0, youtube, spotify });
     server = running.server;
     browser = spawn(browserExecutable, ['--headless=new', '--disable-gpu', '--in-process-gpu', '--disable-background-networking', '--disable-component-update', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1', `--user-data-dir=${profile}`, 'about:blank'], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
     browser.stderr.on('data', (chunk) => { browserLog = (browserLog + chunk).slice(-3000); });
@@ -143,6 +163,82 @@ test('playlist controls remain usable while scrolling, typing, searching and syn
     assert.match(await client.evaluate('document.querySelector("#playlistMeta").textContent'), /Created 1 day ago/);
     assert.match(await client.evaluate('document.querySelector("#playlistMeta").textContent'), /Updated 2 hours ago/);
     assert.equal(await client.evaluate('document.querySelector("#playlistSyncButton").hidden'), false);
+    assert.equal(await client.evaluate('document.querySelector("#youtubeExportButton").hidden'), true);
+    assert.equal(await client.evaluate('document.querySelector("#spotifyExportButton").hidden'), true);
+    assert.equal(await client.evaluate('document.querySelector(\'.tree-button[data-playlist-id="punk.lista"] .tree-glyph\').textContent'), '');
+    assert.equal(await client.evaluate('Boolean(document.querySelector(".tree-toggle-spacer"))'), false);
+    assert.equal(await client.evaluate('document.querySelector("#homeButton").getBoundingClientRect().right < document.querySelector(".sidebar").getBoundingClientRect().right - 15'), true);
+    stage = 'compact library actions at minimum sidebar width';
+    await client.evaluate('document.documentElement.style.setProperty("--sidebar-width", "220px")');
+    assert.equal(await client.evaluate(`(() => {
+      const create = document.querySelector('#newPlaylistButton').getBoundingClientRect();
+      const input = document.querySelector('#importButton').getBoundingClientRect();
+      const overview = document.querySelector('#homeButton').getBoundingClientRect();
+      return create.top === input.top && create.right < input.left && input.right <= overview.right
+        && create.left >= overview.left && input.bottom < overview.top
+        && document.querySelector('#importButton').scrollWidth <= input.width;
+    })()`), true, 'New and Import fit side by side above Overview');
+    await client.evaluate('document.documentElement.style.removeProperty("--sidebar-width"); document.querySelector("#importButton").click()');
+    assert.equal(await client.evaluate('document.querySelector("#importView").hidden'), false);
+    assert.equal(await client.evaluate('document.querySelector("#importButton").getAttribute("aria-current")'), 'page');
+    await client.evaluate('goToPlaylist("punk.lista")');
+    stage = 'thin sidebar scrollbar and nested playlist folding';
+    assert.equal(await client.evaluate('getComputedStyle(document.querySelector("#playlistTree"), "::-webkit-scrollbar").width'), '3px');
+    const beforeFolding = await client.evaluate('appNavigationIndex');
+    await client.evaluate(`
+      document.querySelector('.tree-toggle[data-playlist-id="punk-90s.lista"]').click();
+      document.querySelector('.tree-toggle[data-playlist-id="punk.lista"]').click();
+    `);
+    assert.equal(await client.evaluate('document.querySelector("#playlistName").textContent'), 'Punk');
+    assert.equal(await client.evaluate('appNavigationIndex'), beforeFolding);
+    assert.equal(await client.evaluate('document.querySelector(\'.tree-button[data-playlist-id="punk-90s.lista"]\').getClientRects().length'), 0);
+    await client.evaluate('document.querySelector(\'.tree-toggle[data-playlist-id="punk.lista"]\').click()');
+    assert.equal(await client.evaluate('document.querySelector(\'.tree-toggle[data-playlist-id="punk-90s.lista"]\').getAttribute("aria-expanded")'), 'false');
+    assert.equal(await client.evaluate('document.querySelector(\'.tree-button[data-playlist-id="green-day.lista"]\').getClientRects().length'), 0);
+    await client.evaluate('document.querySelector(\'.tree-toggle[data-playlist-id="punk.lista"]\').click()');
+    await client.evaluate('window.__beforeFoldReload = true');
+    await client.send('Page.reload');
+    await until(() => client.evaluate('!window.__beforeFoldReload && Boolean(document.querySelector(\'.tree-toggle[data-playlist-id="punk.lista"]\'))'));
+    assert.equal(await client.evaluate('document.querySelector(\'.tree-toggle[data-playlist-id="punk.lista"]\').getAttribute("aria-expanded")'), 'false');
+    await client.evaluate('goToPlaylist("punk.lista"); document.querySelector(\'.tree-toggle[data-playlist-id="punk.lista"]\').focus()');
+    assert.equal(await client.evaluate('document.activeElement.className'), 'tree-toggle');
+    await client.key('Enter', 'Enter', 13);
+    assert.equal(await client.evaluate('document.querySelector(\'.tree-toggle[data-playlist-id="punk.lista"]\').getAttribute("aria-expanded")'), 'true');
+    await client.evaluate('document.querySelector(\'.tree-toggle[data-playlist-id="punk-90s.lista"]\').focus()');
+    await client.key(' ', 'Space', 32);
+    assert.equal(await client.evaluate('document.querySelector(\'.tree-toggle[data-playlist-id="punk-90s.lista"]\').getAttribute("aria-expanded")'), 'true');
+    assert.equal(await client.evaluate('composer.song'), '');
+    await client.evaluate(`
+      document.querySelector('.tree-toggle[data-playlist-id="punk-90s.lista"]').click();
+      document.querySelector('.tree-toggle[data-playlist-id="punk.lista"]').click();
+      goToPlaylist('green-day.lista');
+    `);
+    assert.equal(await client.evaluate('document.querySelector(\'.tree-button[data-playlist-id="green-day.lista"]\').getClientRects().length > 0'), true);
+    assert.equal(await client.evaluate('document.querySelector(\'.tree-toggle[data-playlist-id="punk-90s.lista"]\').getAttribute("aria-expanded")'), 'true');
+    stage = 'moving a playlist into a folded parent';
+    await client.evaluate(`
+      goToPlaylist('punk.lista');
+      document.querySelector('.tree-toggle[data-playlist-id="punk.lista"]').click();
+      draggedPlaylistId = 'green-day.lista';
+      document.querySelector('.tree-button[data-playlist-id="punk.lista"]').dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
+      draggedPlaylistId = null;
+    `);
+    await until(() => client.evaluate('library.playlists.find(p => p.id === "green-day.lista").parent === "Punk"'));
+    assert.equal(await client.evaluate('document.querySelector(\'.tree-toggle[data-playlist-id="punk.lista"]\').getAttribute("aria-expanded")'), 'true');
+    assert.equal(await client.evaluate('Boolean(document.querySelector(\'.tree-toggle[data-playlist-id="punk-90s.lista"]\'))'), false, 'a leaf has no disclosure control');
+    stage = 'import navigation and unconfigured service connection';
+    assert.equal(await client.evaluate('document.querySelector("#playlistTree").getBoundingClientRect().right >= document.querySelector(".sidebar").getBoundingClientRect().right - 1.1'), true, 'the scrollbar container reaches the sidebar border');
+    assert.equal(await client.evaluate('Math.abs(document.querySelector("#playlistTree > ul").getBoundingClientRect().right - document.querySelector("#homeButton").getBoundingClientRect().right) < 1.1'), true, 'playlist content keeps the navigation inset');
+    await client.evaluate('goToImport("spotify")');
+    assert.equal(await client.evaluate('document.querySelector("#importView").hidden'), false);
+    assert.equal(await client.evaluate('document.querySelector("#spotifyImportUnavailable").hidden'), false);
+    await client.evaluate('document.querySelector("#spotifyImportConnectButton").click()');
+    await until(() => client.evaluate('!document.querySelector("#settingsView").hidden && document.activeElement.id === "spotifyCookiesInput"'));
+    assert.equal(await client.evaluate('document.querySelectorAll("#settingsView .music-import-flow").length'), 0);
+    await client.evaluate('history.back()');
+    await until(() => client.evaluate('!document.querySelector("#importView").hidden'));
+    assert.equal(await client.evaluate('document.querySelector("#spotifyImportTab").getAttribute("aria-selected")'), 'true');
+    await client.evaluate('goToPlaylist("punk.lista")');
     stage = 'independent sidebar scrolling';
     await client.evaluate('window.scrollTo(0, 1500)');
     await delay(100);
@@ -156,6 +252,7 @@ test('playlist controls remain usable while scrolling, typing, searching and syn
     assert.equal(navigation.sidebar.bottom, 800);
     assert.ok(navigation.overview.top >= navigation.header.bottom);
     assert.ok(navigation.settings.bottom <= 800);
+    assert.equal(await client.evaluate('document.querySelector("#importButton").getBoundingClientRect().bottom <= 800'), true);
     assert.equal(navigation.resizer.height, navigation.sidebar.height);
     assert.equal(navigation.scrollable, true);
     const sidebarScrollPosition = await client.evaluate('window.scrollY');
@@ -170,6 +267,7 @@ test('playlist controls remain usable while scrolling, typing, searching and syn
     await client.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 360, deviceScaleFactor: 1, mobile: false });
     await delay(50);
     assert.equal(await client.evaluate('document.querySelector("#settingsButton").getBoundingClientRect().bottom <= innerHeight'), true);
+    assert.equal(await client.evaluate('document.querySelector("#importButton").getBoundingClientRect().bottom <= innerHeight'), true);
     assert.equal(await client.evaluate('document.querySelector("#homeButton").getBoundingClientRect().top >= document.querySelector(".topbar").getBoundingClientRect().bottom'), true);
     assert.equal(await client.evaluate('document.querySelector("#playlistTree").clientHeight > 0'), true);
     await client.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -228,6 +326,24 @@ test('playlist controls remain usable while scrolling, typing, searching and syn
     await delay(100);
     assert.ok(Math.abs(await client.evaluate('document.querySelector(".song-composer").getBoundingClientRect().top') - 12) < 2);
     assert.equal(await client.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true);
+    stage = 'GitHub defaults and advanced overrides';
+    await client.evaluate('goToSettings()');
+    await client.evaluate(`(async () => {
+      window.__savedSettings = await requestJson('/api/settings');
+      fillSettings({ ...window.__savedSettings, github: { login: 'personal', owner: '', repository: '', branch: '', autoSync: false } });
+    })()`);
+    assert.equal(await client.evaluate('document.querySelector("#githubAdvanced").open'), false);
+    assert.equal(await client.evaluate('document.querySelector("#githubOwnerInput").checkVisibility()'), false);
+    assert.equal(await client.evaluate('document.querySelector("#githubBranchInput").checkVisibility()'), false);
+    assert.equal(await client.evaluate('document.querySelector("#githubRepositoryLink").href'), 'https://github.com/personal/playlista-playlists');
+    await client.evaluate(`
+      document.querySelector('#githubAdvanced').open = true;
+      document.querySelector('#githubOwnerInput').value = 'group';
+      document.querySelector('#githubRepositoryInput').value = 'custom-music';
+      document.querySelector('#githubRepositoryInput').dispatchEvent(new Event('input'));
+    `);
+    assert.equal(await client.evaluate('document.querySelector("#githubRepositoryLink").href'), 'https://github.com/group/custom-music');
+    await client.evaluate('fillSettings(window.__savedSettings); document.querySelector("#githubAdvanced").open = false');
     stage = 'YouTube account preview';
     await client.evaluate('goToSettings()');
     await until(() => client.evaluate('document.querySelector("#youtubeConnectionDetails").open'));
@@ -239,22 +355,42 @@ test('playlist controls remain usable while scrolling, typing, searching and syn
     await client.evaluate('document.querySelector("#youtubeAcceptButton").click()');
     await until(() => client.evaluate('!document.querySelector("#youtubeImportControls").hidden'));
     assert.equal(JSON.parse(await fs.readFile(path.join(directory, 'youtube.json'), 'utf8')).ciphertext, 'encrypted-test-value');
-    stage = 'YouTube import';
+    stage = 'YouTube imports use the dedicated Import page';
+    await client.evaluate('document.querySelector("#youtubeOpenImportButton").click()');
+    await until(() => client.evaluate('!document.querySelector("#importView").hidden'));
+    assert.equal(await client.evaluate('document.querySelector("#settingsView").hidden'), true);
     await client.evaluate('document.querySelector("#youtubeLoadButton").click()');
     await until(() => client.evaluate('Boolean(document.querySelector("#youtubePlaylistList button"))'));
     const importHistory = await client.evaluate('appNavigationIndex');
     await client.evaluate('document.querySelector("#youtubePlaylistList button").click()');
+    assert.equal(await client.evaluate('document.querySelector("#youtubeDestinationPanel").hidden'), false);
+    assert.equal(await client.evaluate('document.querySelector("#youtubeNewDestination").checked'), true);
+    stage = 'import provider tabs preserve draft and browser history';
+    await client.evaluate('document.querySelector("#youtubeNewNameInput").value = "Unfinished import"; document.querySelector("#youtubeImportTab").focus()');
+    await client.key('ArrowRight', 'ArrowRight', 39);
+    assert.equal(await client.evaluate('document.querySelector("#spotifyImportTab").getAttribute("aria-selected")'), 'true');
+    assert.equal(await client.evaluate('document.activeElement.id'), 'spotifyImportTab');
+    await client.evaluate('history.back()');
+    await until(() => client.evaluate('document.querySelector("#youtubeImportTab").getAttribute("aria-selected") === "true"'));
+    assert.equal(await client.evaluate('document.querySelector("#youtubeNewNameInput").value'), 'Unfinished import');
+    assert.equal(await client.evaluate('document.querySelector("#youtubeDestinationPanel").hidden'), false);
+    await client.evaluate('document.querySelector("#youtubeNewNameInput").value = ""');
+    stage = 'YouTube consecutive imports';
+    await client.evaluate('document.querySelector("#youtubeImportButton").click()');
     await until(() => client.evaluate('Boolean(library.playlists.find(p => p.name === "Imported playlist"))'));
-    assert.equal(await client.evaluate('document.querySelector("#settingsView").hidden'), false);
+    assert.equal(await client.evaluate('document.querySelector("#importView").hidden'), false);
     assert.equal(await client.evaluate('appNavigationIndex'), importHistory);
     assert.equal(await client.evaluate('library.playlists.find(p => p.name === "Imported playlist").songs.length'), 4);
     assert.equal(await client.evaluate('[...document.querySelectorAll(".tree-button.is-imported")].some(b => b.textContent.includes("Imported playlist"))'), true);
     await until(() => client.evaluate('!document.querySelectorAll("#youtubePlaylistList button")[1].disabled'));
     await client.evaluate('document.querySelectorAll("#youtubePlaylistList button")[1].click()');
+    await client.evaluate('document.querySelector("#youtubeImportButton").click()');
     await until(() => client.evaluate('Boolean(library.playlists.find(p => p.name === "Large import"))'));
-    assert.equal(await client.evaluate('document.querySelector("#settingsView").hidden'), false);
+    assert.equal(await client.evaluate('document.querySelector("#importView").hidden'), false);
     assert.equal(await client.evaluate('appNavigationIndex'), importHistory);
     stage = 'YouTube automatic export results';
+    assert.equal(await client.evaluate('document.querySelector("#youtubeExportButton").hidden'), false);
+    assert.ok(await client.evaluate('document.querySelector("#youtubeExportButton").getBoundingClientRect().width <= 34'));
     await client.evaluate('goToPlaylist(library.playlists.find(p => p.name === "Imported playlist").id); document.querySelector("#youtubeExportButton").click()');
     await until(() => client.evaluate('!document.querySelector("#youtubeExportView").hidden && !document.querySelector("#youtubeExportResult").hidden'));
     assert.equal(await client.evaluate('document.querySelectorAll(".youtube-export-row").length'), 4);
@@ -282,6 +418,87 @@ test('playlist controls remain usable while scrolling, typing, searching and syn
     assert.match(await client.evaluate('document.querySelector(".youtube-export-row").textContent'), /^51\./);
     assert.equal(await client.evaluate('document.querySelectorAll(".youtube-export-row").length'), 50);
     assert.equal(youtubeCalls.filter((call) => call.action === 'create').at(-1).ids.length, 1000);
+    stage = 'YouTube mobile link import';
+    await client.evaluate('goToImport("youtube")');
+    await client.evaluate(`
+      document.querySelector('#youtubeSourceUrlTab').click();
+      document.querySelector('#youtubeUrlInput').value = 'https://m.youtube.com/watch?v=abcdefghijk&list=PLimport';
+      document.querySelector('#youtubeUrlInput').dispatchEvent(new Event('input'));
+      document.querySelector('#youtubeNewNameInput').value = 'From a YouTube link';
+      document.querySelector('#youtubeImportButton').click();
+    `);
+    await until(() => client.evaluate('Boolean(library.playlists.find(p => p.name === "From a YouTube link"))'));
+    assert.equal(youtubeCalls.filter((call) => call.action === 'playlist').at(-1).id, 'PLimport');
+    stage = 'Spotify browser-session connection';
+    await client.evaluate('goToSettings("spotify")');
+    await until(() => client.evaluate('document.querySelector("#spotifyConnectionDetails").open'));
+    assert.equal(await client.evaluate('Boolean(document.querySelector("#spotifyClientIdInput"))'), false);
+    await client.evaluate('document.querySelector("#spotifyCookiesInput").value = "synthetic-cookie"; document.querySelector("#spotifyCheckButton").click()');
+    await until(() => client.evaluate('!document.querySelector("#spotifyAccountPreview").hidden'));
+    assert.equal(await client.evaluate('document.querySelector("#spotifyCookiesInput").value'), '');
+    assert.equal(await client.evaluate('document.querySelector("#spotifyImportControls").hidden'), true);
+    assert.match(await client.evaluate('document.querySelector("#spotifyPreviewName").textContent'), /Personal Spotify.*personal-spotify/);
+    await client.evaluate('document.querySelector("#spotifyAcceptButton").click()');
+    await until(() => client.evaluate('!document.querySelector("#spotifyImportControls").hidden'));
+    assert.equal(JSON.parse(await fs.readFile(path.join(directory, 'spotify.json'), 'utf8')).ciphertext, 'encrypted-spotify-test');
+    stage = 'Spotify consecutive imports stay in Import';
+    await client.evaluate('document.querySelector("#spotifyOpenImportButton").click()');
+    await until(() => client.evaluate('!document.querySelector("#importView").hidden'));
+    assert.equal(await client.evaluate('document.querySelector("#spotifyImportTab").getAttribute("aria-selected")'), 'true');
+    await client.evaluate('document.querySelector("#spotifyLoadButton").click()');
+    await until(() => client.evaluate('document.querySelectorAll("#spotifyPlaylistList button").length === 2'));
+    const spotifyHistory = await client.evaluate('appNavigationIndex');
+    await client.evaluate('document.querySelector("#spotifyPlaylistList button").click()');
+    assert.equal(await client.evaluate('document.querySelector("#spotifyDestinationPanel").hidden'), false);
+    await client.evaluate('document.querySelector("#spotifyImportButton").click()');
+    await until(() => client.evaluate('Boolean(library.playlists.find(p => p.name === "Followed Spotify"))'));
+    assert.equal(await client.evaluate('document.querySelector("#importView").hidden'), false);
+    assert.equal(await client.evaluate('appNavigationIndex'), spotifyHistory);
+    assert.equal(await client.evaluate('[...document.querySelectorAll(".tree-button.is-imported")].some(b => b.textContent.includes("Followed Spotify"))'), true);
+    assert.equal(await client.evaluate('library.playlists.find(p => p.name === "Followed Spotify").songs.length'), 2);
+    await until(() => client.evaluate('!document.querySelectorAll("#spotifyPlaylistList button")[1].disabled'));
+    await client.evaluate('document.querySelectorAll("#spotifyPlaylistList button")[1].click()');
+    await client.evaluate('document.querySelector("#spotifyImportButton").click()');
+    await until(() => client.evaluate('Boolean(library.playlists.find(p => p.name === "Another Spotify"))'));
+    assert.equal(await client.evaluate('document.querySelector("#importView").hidden'), false);
+    assert.equal(await client.evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
+    await until(() => client.evaluate('!document.querySelectorAll("#spotifyPlaylistList button")[1].disabled'));
+    stage = 'Spotify existing destination and URL source';
+    await client.evaluate(`
+      document.querySelector('#spotifyPlaylistList button').click();
+      document.querySelector('#spotifyExistingDestination').click();
+      document.querySelector('#spotifyTargetSelect').value = library.playlists.find(p => p.name === 'Followed Spotify').id;
+      document.querySelector('#spotifyTargetSelect').dispatchEvent(new Event('change'));
+    `);
+    assert.equal(await client.evaluate('document.querySelector("#spotifyNameField").hidden'), true);
+    assert.match(await client.evaluate('document.querySelector("#spotifyImportButton").textContent'), /Add songs/);
+    await client.evaluate('document.querySelector("#spotifyImportButton").click()');
+    await until(() => client.evaluate('library.playlists.find(p => p.name === "Followed Spotify").songs.length === 4'));
+    await until(() => client.evaluate('!document.querySelector("#spotifySourceUrlTab").disabled'));
+    await client.evaluate(`
+      document.querySelector('#spotifySourceUrlTab').click();
+      document.querySelector('#spotifyUrlInput').value = 'https://spotify.link/browser-share';
+      document.querySelector('#spotifyUrlInput').dispatchEvent(new Event('input'));
+      document.querySelector('#spotifyNewDestination').click();
+      document.querySelector('#spotifyNewNameInput').value = 'From a Spotify link';
+      document.querySelector('#spotifyImportButton').click();
+    `);
+    await until(() => client.evaluate('Boolean(library.playlists.find(p => p.name === "From a Spotify link"))'));
+    stage = 'compact Spotify export and results';
+    await client.evaluate('goToPlaylist(library.playlists.find(p => p.name === "Followed Spotify").id)');
+    assert.equal(await client.evaluate('document.querySelector("#spotifyExportButton").hidden'), false);
+    assert.ok(await client.evaluate('document.querySelector("#spotifyExportButton").getBoundingClientRect().width <= 34'));
+    await client.evaluate('document.querySelector("#spotifyExportButton").click()');
+    await until(() => client.evaluate('!document.querySelector("#spotifyExportView").hidden && !document.querySelector("#spotifyExportResult").hidden'));
+    assert.equal(spotifyCalls.find((call) => call.action === 'create').ids.length, 4);
+    assert.equal(await client.evaluate('document.querySelectorAll("#spotifyExportRows .youtube-export-row").length'), 4);
+    assert.equal(await client.evaluate('document.querySelector("#spotifyExportResult a").href'), 'https://open.spotify.com/playlist/abcdefghijkl0123456789');
+    await client.evaluate('goToSettings()');
+    await client.evaluate('document.querySelector("#spotifyDisconnectButton").click()');
+    await until(() => client.evaluate('document.querySelector("#spotifyImportControls").hidden'));
+    await assert.rejects(fs.readFile(path.join(directory, 'spotify.json')), { code: 'ENOENT' });
+    assert.equal(spotifyCalls.filter((call) => call.action === 'playlist').length, 4);
+    assert.equal(await client.evaluate('document.querySelector("#spotifyExportButton").hidden'), true);
     assert.deepEqual(client.errors, []);
   } catch (error) {
     error.message = `${stage}: ${error.message}\n${browserLog}`;

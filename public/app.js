@@ -1,25 +1,16 @@
 const elements = {
   tree: document.querySelector('#playlistTree'),
   homeButton: document.querySelector('#homeButton'),
+  importButton: document.querySelector('#importButton'),
+  importView: document.querySelector('#importView'),
   settingsButton: document.querySelector('#settingsButton'),
   sidebarResizer: document.querySelector('#sidebarResizer'),
   homeView: document.querySelector('#homeView'),
   settingsView: document.querySelector('#settingsView'),
   settingsForm: document.querySelector('#settingsForm'),
   playlistDirectoryInput: document.querySelector('#playlistDirectoryInput'),
-  spotifyClientIdInput: document.querySelector('#spotifyClientIdInput'),
-  spotifyRedirectUri: document.querySelector('#spotifyRedirectUri'),
-  spotifyAuthStatus: document.querySelector('#spotifyAuthStatus'),
-  spotifyConnectButton: document.querySelector('#spotifyConnectButton'),
-  spotifyDisconnectButton: document.querySelector('#spotifyDisconnectButton'),
-  spotifyLoadPlaylistsButton: document.querySelector('#spotifyLoadPlaylistsButton'),
-  spotifyTargetPlaylistSelect: document.querySelector('#spotifyTargetPlaylistSelect'),
-  spotifyNewPlaylistName: document.querySelector('#spotifyNewPlaylistName'),
-  spotifySearchField: document.querySelector('.spotify-search-field'),
-  spotifyPlaylistSearch: document.querySelector('#spotifyPlaylistSearch'),
-  spotifyPlaylistList: document.querySelector('#spotifyPlaylistList'),
-  spotifyImportStatus: document.querySelector('#spotifyImportStatus'),
   githubOwnerInput: document.querySelector('#githubOwnerInput'),
+  githubRepositoryLink: document.querySelector('#githubRepositoryLink'),
   githubRepositoryInput: document.querySelector('#githubRepositoryInput'),
   githubBranchInput: document.querySelector('#githubBranchInput'),
   githubAutoSyncInput: document.querySelector('#githubAutoSyncInput'),
@@ -110,39 +101,48 @@ let selectedGithubLogin = '';
 let syncStatus = null;
 let lastLibraryFingerprint = null;
 let playlistSyncInFlight = false;
-let spotifyConnected = false;
-let spotifyPlaylists = [];
-let spotifyAuthPopup = null;
-let spotifyImportInFlight = false;
 let exportViewId = null;
 const recentImports = new Map();
+const collapsedPlaylists = readCollapsedPlaylists();
+let importProvider = readImportProvider() || 'youtube';
 const youtubeUI = window.createYouTubeUI({
   request: requestJson, getLibrary: () => library, getSelectedId: () => selectedId,
   openSettings: goToSettings,
+  onOpenImport: goToImport,
   onExportView(id) {
     applyNavigation({ selectedId, query: '', section: 'youtube-export', exportId: id }, { historyMode: 'push' });
   },
-  onImport(result) {
-    library = result.library;
-    tagRegistry = result.tags;
-    const expires = Date.now() + 2600;
-    recentImports.set(result.file, expires);
-    render();
-    const button = [...elements.tree.querySelectorAll('.tree-button')].find((item) => item.dataset.playlistId === result.file);
-    if (button) {
-      const bounds = button.getBoundingClientRect();
-      const treeBounds = elements.tree.getBoundingClientRect();
-      if (bounds.top < treeBounds.top) elements.tree.scrollTop -= treeBounds.top - bounds.top;
-      else if (bounds.bottom > treeBounds.bottom) elements.tree.scrollTop += bounds.bottom - treeBounds.bottom;
-    }
-    setTimeout(() => {
-      if (recentImports.get(result.file) !== expires) return;
-      recentImports.delete(result.file);
-      [...elements.tree.querySelectorAll('.tree-button')].find((item) => item.dataset.playlistId === result.file)?.classList.remove('is-imported');
-    }, 2600);
-    showToast(`${result.imported} songs imported.`);
+  onImport: handleMusicImport,
+});
+const spotifyExports = window.createMusicExportUI({ request: requestJson, getLibrary: () => library, getSelectedId: () => selectedId,
+  openSettings: goToSettings, key: 'spotify', label: 'Spotify', onExportView(id) {
+    applyNavigation({ selectedId, query: '', section: 'spotify-export', exportId: id }, { historyMode: 'push' });
   },
 });
+const spotifyUI = window.createMusicImportUI({ request: requestJson, getLibrary: () => library, onImport: handleMusicImport, key: 'spotify', label: 'Spotify', secretId: 'CookiesInput', secretField: 'cookies', openSettings: goToSettings, onOpenImport: goToImport });
+
+function handleMusicImport(result) {
+  library = result.library;
+  tagRegistry = result.tags;
+  revealPlaylistAncestors(result.file);
+  const expires = Date.now() + 2600;
+  recentImports.set(result.file, expires);
+  render();
+  const button = [...elements.tree.querySelectorAll('.tree-button')].find((item) => item.dataset.playlistId === result.file);
+  if (button) {
+    const bounds = button.getBoundingClientRect();
+    const treeBounds = elements.tree.getBoundingClientRect();
+    if (bounds.top < treeBounds.top) elements.tree.scrollTop -= treeBounds.top - bounds.top;
+    else if (bounds.bottom > treeBounds.bottom) elements.tree.scrollTop += bounds.bottom - treeBounds.bottom;
+  }
+  setTimeout(() => {
+    if (recentImports.get(result.file) !== expires) return;
+    recentImports.delete(result.file);
+    [...elements.tree.querySelectorAll('.tree-button')].find((item) => item.dataset.playlistId === result.file)?.classList.remove('is-imported');
+  }, 2600);
+  showToast(`${result.imported} songs imported.`);
+}
+
 
 function byName(name) {
   return library.playlists.find((playlist) => playlist.name?.toLocaleLowerCase('en-US') === name?.toLocaleLowerCase('en-US'));
@@ -564,7 +564,7 @@ function renderQuickAddEditor({ focus = false, caret } = {}) {
 }
 
 function currentNavigationView() {
-  return { selectedId, query: libraryQuery, section: currentSection, exportId: exportViewId };
+  return { selectedId, query: libraryQuery, section: currentSection, exportId: exportViewId, importProvider };
 }
 
 function recordNavigation(view, mode = 'push') {
@@ -575,7 +575,7 @@ function recordNavigation(view, mode = 'push') {
     return;
   }
   const current = appNavigationHistory[appNavigationIndex];
-  if (current && current.selectedId === view.selectedId && current.query === view.query && current.section === view.section && current.exportId === view.exportId) {
+  if (current && current.selectedId === view.selectedId && current.query === view.query && current.section === view.section && current.exportId === view.exportId && current.importProvider === view.importProvider) {
     return;
   }
   appNavigationHistory = appNavigationHistory.slice(0, appNavigationIndex + 1);
@@ -587,9 +587,14 @@ function recordNavigation(view, mode = 'push') {
 
 function applyNavigation(view, { historyMode = null, resetComposerOnNavigate = false } = {}) {
   const previousId = selectedId;
-  currentSection = ['settings', 'youtube-export'].includes(view.section) ? view.section : 'library';
+  currentSection = ['settings', 'import', 'youtube-export', 'spotify-export'].includes(view.section) ? view.section : 'library';
+  if (['youtube', 'spotify'].includes(view.importProvider)) {
+    importProvider = view.importProvider;
+    try { window.localStorage.setItem('playlista-import-provider', importProvider); } catch {}
+  }
   exportViewId = view.exportId || null;
   selectedId = library.playlists.some((playlist) => playlist.id === view.selectedId) ? view.selectedId : null;
+  if (selectedId) revealPlaylistAncestors(selectedId);
   libraryQuery = view.query || '';
   elements.librarySearchInput.value = libraryQuery;
   elements.clearLibrarySearch.hidden = !libraryQuery;
@@ -622,18 +627,43 @@ function goHome() {
   applyNavigation({ selectedId: null, query: '', section: 'library' }, { historyMode: 'push', resetComposerOnNavigate: true });
 }
 
-async function goToSettings() {
+async function goToSettings(provider) {
   applyNavigation({ selectedId: null, query: '', section: 'settings' }, { historyMode: 'push', resetComposerOnNavigate: true });
-  if (settingsLoaded) {
-    await Promise.all([refreshSpotifyStatus(), youtubeUI.refresh()]);
-    return;
-  }
   try {
-    const result = await requestJson('/api/settings');
-    fillSettings(result);
-    await Promise.all([refreshSpotifyStatus(), youtubeUI.refresh()]);
+    if (!settingsLoaded) fillSettings(await requestJson('/api/settings'));
+    await Promise.all([spotifyUI.refresh(), youtubeUI.refresh()]);
+    if (['youtube', 'spotify'].includes(provider) && currentSection === 'settings') {
+      const details = document.getElementById(`${provider}ConnectionDetails`);
+      details.open = true;
+      details.scrollIntoView({ block: 'center' });
+      document.getElementById(provider === 'youtube' ? 'youtubeHeadersInput' : 'spotifyCookiesInput').focus({ preventScroll: true });
+    }
   } catch (error) {
     setFormError(elements.settingsError, error.message);
+  }
+}
+
+function readImportProvider() {
+  try {
+    const value = window.localStorage.getItem('playlista-import-provider');
+    return ['youtube', 'spotify'].includes(value) ? value : null;
+  } catch { return null; }
+}
+
+async function goToImport(provider) {
+  const next = ['youtube', 'spotify'].includes(provider) ? provider : readImportProvider()
+    || (spotifyUI.isConnected() && !youtubeUI.isConnected() ? 'spotify' : importProvider);
+  applyNavigation({ selectedId: null, query: '', section: 'import', importProvider: next }, { historyMode: 'push', resetComposerOnNavigate: true });
+  await Promise.all([spotifyUI.refresh(), youtubeUI.refresh()]);
+}
+
+function renderImportProvider() {
+  for (const provider of ['youtube', 'spotify']) {
+    const selected = provider === importProvider;
+    const tab = document.getElementById(`${provider}ImportTab`);
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    document.getElementById(`${provider}ImportPanel`).hidden = !selected;
   }
 }
 
@@ -641,13 +671,21 @@ function fillSettings(settings) {
   elements.playlistDirectoryInput.value = settings.playlistDirectory || '';
   elements.githubOwnerInput.value = settings.github?.owner || '';
   elements.githubRepositoryInput.value = settings.github?.repository || '';
-  elements.githubBranchInput.value = settings.github?.branch || 'main';
+  elements.githubBranchInput.value = settings.github?.branch || '';
   elements.githubAutoSyncInput.checked = settings.github?.autoSync === true;
-  elements.spotifyClientIdInput.value = settings.spotify?.clientId || '';
-  elements.spotifyRedirectUri.textContent = settings.spotify?.redirectUri || `http://127.0.0.1:${window.location.port || '43817'}/spotify/callback`;
   selectedGithubLogin = settings.github?.login || '';
   elements.githubAuthStatus.textContent = selectedGithubLogin ? `Using ${selectedGithubLogin}` : 'No account selected';
+  renderGitHubRepositoryLink();
   settingsLoaded = true;
+}
+
+function renderGitHubRepositoryLink() {
+  const owner = elements.githubOwnerInput.value.trim() || selectedGithubLogin;
+  const repository = elements.githubRepositoryInput.value.trim() || 'playlista-playlists';
+  elements.githubOwnerInput.placeholder = selectedGithubLogin || 'Selected account';
+  elements.githubRepositoryLink.hidden = !owner;
+  elements.githubRepositoryLink.textContent = owner ? `${owner}/${repository} ↗` : '';
+  elements.githubRepositoryLink.href = owner ? `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}` : '';
 }
 
 function settingsPayload() {
@@ -659,159 +697,7 @@ function settingsPayload() {
       branch: elements.githubBranchInput.value.trim(),
       autoSync: elements.githubAutoSyncInput.checked,
     },
-    spotify: { clientId: elements.spotifyClientIdInput.value.trim() },
   };
-}
-
-async function refreshSpotifyStatus() {
-  try {
-    const result = await requestJson('/api/spotify/status');
-    spotifyConnected = result.connected;
-    elements.spotifyAuthStatus.textContent = spotifyConnected ? 'Connected for this app session' : 'Not connected';
-    elements.spotifyConnectButton.hidden = spotifyConnected;
-    elements.spotifyDisconnectButton.hidden = !spotifyConnected;
-    elements.spotifyLoadPlaylistsButton.disabled = !spotifyConnected;
-  } catch (error) {
-    elements.spotifyAuthStatus.textContent = 'Spotify status unavailable';
-  }
-}
-
-async function connectSpotify() {
-  setFormError(elements.settingsError, '');
-  const popup = window.open('about:blank', 'playlista-spotify-auth', 'popup,width=540,height=720');
-  if (!popup) {
-    setFormError(elements.settingsError, 'Allow pop-ups for Playlista to sign in to Spotify.');
-    return;
-  }
-  spotifyAuthPopup = popup;
-  elements.spotifyConnectButton.disabled = true;
-  try {
-    await saveSettings();
-    const result = await requestJson('/api/spotify/connect', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ clientId: elements.spotifyClientIdInput.value.trim() }),
-    });
-    popup.location = result.authorizationUrl;
-    elements.spotifyAuthStatus.textContent = 'Waiting for Spotify authorization…';
-  } catch (error) {
-    popup.close();
-    spotifyAuthPopup = null;
-    setFormError(elements.settingsError, error.message);
-  } finally {
-    elements.spotifyConnectButton.disabled = false;
-  }
-}
-
-async function disconnectSpotify() {
-  try {
-    await requestJson('/api/spotify/disconnect', { method: 'POST' });
-    spotifyConnected = false;
-    spotifyPlaylists = [];
-    elements.spotifyPlaylistList.replaceChildren();
-    elements.spotifyImportStatus.hidden = true;
-    elements.spotifyAuthStatus.textContent = 'Not connected';
-    elements.spotifyConnectButton.hidden = false;
-    elements.spotifyDisconnectButton.hidden = true;
-    elements.spotifyLoadPlaylistsButton.disabled = true;
-    elements.spotifySearchField.hidden = true;
-  } catch (error) {
-    setFormError(elements.settingsError, error.message);
-  }
-}
-
-function updateSpotifyDestinationChoices() {
-  const select = elements.spotifyTargetPlaylistSelect;
-  if (!select) return;
-  const previous = select.value;
-  select.replaceChildren(new Option('New playlist with Spotify’s name', ''));
-  for (const playlist of library.playlists) select.add(new Option(`Append to ${playlist.name}`, playlist.id));
-  if ([...select.options].some((option) => option.value === previous)) select.value = previous;
-}
-
-function renderSpotifyPlaylists() {
-  const panel = elements.spotifyPlaylistList;
-  if (!panel) return;
-  updateSpotifyDestinationChoices();
-  panel.replaceChildren();
-  const query = elements.spotifyPlaylistSearch.value.trim().toLocaleLowerCase('en-US');
-  const matches = spotifyPlaylists.filter((playlist) => !query || playlist.name.toLocaleLowerCase('en-US').includes(query));
-  elements.spotifySearchField.hidden = spotifyPlaylists.length === 0;
-  if (!spotifyPlaylists.length) return;
-  if (!matches.length) {
-    panel.append(makeElement('p', 'spotify-empty-result', 'No Spotify playlists match this search.'));
-    return;
-  }
-  for (const playlist of matches) {
-    const row = makeElement('div', 'spotify-playlist-row');
-    const details = makeElement('div', 'spotify-playlist-details');
-    details.append(makeElement('strong', 'spotify-playlist-name', playlist.name));
-    const count = `${playlist.total} song${playlist.total === 1 ? '' : 's'}`;
-    details.append(makeElement('span', 'spotify-playlist-count', playlist.importable ? count : `${count} · items unavailable`));
-    row.append(details);
-    const button = makeElement('button', 'button button-small button-soft', playlist.importable ? 'Import' : 'Unavailable');
-    button.type = 'button';
-    button.disabled = !playlist.importable || spotifyImportInFlight;
-    button.addEventListener('click', () => importSpotifyPlaylist(playlist, button));
-    row.append(button);
-    panel.append(row);
-  }
-}
-
-async function loadSpotifyPlaylists() {
-  elements.spotifyLoadPlaylistsButton.disabled = true;
-  elements.spotifyAuthStatus.textContent = 'Loading Spotify playlists…';
-  setFormError(elements.settingsError, '');
-  try {
-    const result = await requestJson('/api/spotify/playlists');
-    spotifyPlaylists = result.playlists;
-    elements.spotifyAuthStatus.textContent = `${spotifyPlaylists.length} Spotify playlists loaded`;
-    renderSpotifyPlaylists();
-    elements.spotifyImportStatus.hidden = spotifyPlaylists.length > 0;
-    if (!spotifyPlaylists.length) {
-      elements.spotifyImportStatus.textContent = 'No playlists were found on this Spotify account.';
-    }
-  } catch (error) {
-    elements.spotifyAuthStatus.textContent = 'Could not load Spotify playlists';
-    setFormError(elements.settingsError, error.message);
-  } finally {
-    elements.spotifyLoadPlaylistsButton.disabled = !spotifyConnected;
-  }
-}
-
-async function importSpotifyPlaylist(playlist, button) {
-  if (spotifyImportInFlight) return;
-  spotifyImportInFlight = true;
-  button.disabled = true;
-  button.textContent = 'Importing…';
-  elements.spotifyImportStatus.hidden = false;
-  elements.spotifyImportStatus.textContent = `Reading “${playlist.name}” from Spotify…`;
-  try {
-    const file = elements.spotifyTargetPlaylistSelect.value;
-    const result = await requestJson('/api/spotify/import', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        id: playlist.id,
-        name: elements.spotifyNewPlaylistName.value.trim() || playlist.name,
-        description: playlist.description,
-        file,
-      }),
-    });
-    library = result.library;
-    tagRegistry = result.tags;
-    selectedId = result.file;
-    applyNavigation({ selectedId, query: '', section: 'library' }, { historyMode: 'push', resetComposerOnNavigate: true });
-    render();
-    elements.spotifyImportStatus.hidden = false;
-    elements.spotifyImportStatus.textContent = `${result.imported} songs imported${result.skipped ? ` · ${result.skipped} unavailable tracks or non-song items skipped` : ''}.`;
-    showToast(`${result.imported} songs imported to ${library.playlists.find((item) => item.id === result.file)?.name || 'playlist'}.`);
-    renderSpotifyPlaylists();
-  } catch (error) {
-    elements.spotifyImportStatus.hidden = false;
-    elements.spotifyImportStatus.textContent = error.message;
-  } finally {
-    spotifyImportInFlight = false;
-    renderSpotifyPlaylists();
-  }
 }
 
 async function saveSettings(event) {
@@ -842,9 +728,8 @@ async function testGitHubConnection() {
     await saveSettings();
     elements.githubAuthStatus.textContent = 'Checking repository access…';
     const result = await requestJson('/api/github/test', { method: 'POST' });
-    elements.githubAuthStatus.textContent = result.emptyRepository
-      ? `Connected as ${result.account} · ${result.repository} · Empty repository; Save to GitHub will initialize it`
-      : `Connected as ${result.account} · ${result.repository} · ${result.playlistFiles} playlist files`;
+    elements.githubAuthStatus.textContent = `Connected as ${result.account}`;
+    renderGitHubRepositoryLink();
   } catch (error) {
     elements.githubAuthStatus.textContent = 'Not connected';
     setFormError(elements.settingsError, error.message);
@@ -909,10 +794,11 @@ async function acceptGithubAccount() {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: pendingGithubLogin }),
     });
     selectedGithubLogin = result.login;
+    renderGitHubRepositoryLink();
     elements.githubAuthStatus.textContent = `Using ${result.login}`;
     elements.githubAccountPicker.hidden = true;
     renderGithubAccounts();
-    showToast(`GitHub account ${result.login} selected for Playlista.`);
+    await testGitHubConnection();
   } catch (error) {
     elements.githubAccountMessage.textContent = error.message;
     elements.acceptGithubAccountButton.disabled = false;
@@ -1009,6 +895,29 @@ async function checkServerHealth() {
   }
 }
 
+function readCollapsedPlaylists() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem('playlista-collapsed-playlists') || '[]');
+    return new Set(Array.isArray(saved) ? saved.filter((id) => typeof id === 'string') : []);
+  } catch { return new Set(); }
+}
+
+function saveCollapsedPlaylists() {
+  try { window.localStorage.setItem('playlista-collapsed-playlists', JSON.stringify([...collapsedPlaylists])); } catch {}
+}
+
+function revealPlaylistAncestors(id) {
+  let playlist = library.playlists.find((item) => item.id === id);
+  const visited = new Set();
+  let changed = false;
+  while (playlist?.parent && !visited.has(playlist.id)) {
+    visited.add(playlist.id);
+    playlist = byName(playlist.parent);
+    if (playlist && collapsedPlaylists.delete(playlist.id)) changed = true;
+  }
+  if (changed) saveCollapsedPlaylists();
+}
+
 function renderTree() {
   const scrollTop = elements.tree.scrollTop;
   elements.tree.replaceChildren();
@@ -1033,6 +942,7 @@ function renderTree() {
     if (visited.has(playlist.id)) return;
     visited.add(playlist.id);
     const item = makeElement('li', 'tree-item');
+    const row = makeElement('div', 'tree-row');
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'tree-button';
@@ -1064,17 +974,42 @@ function renderTree() {
       button.classList.remove('drop-target');
       if (draggedPlaylistId && draggedPlaylistId !== playlist.id) changePlaylistParent(draggedPlaylistId, playlist.name);
     });
-    button.append(makeElement('span', 'tree-glyph', '♫'), makeElement('span', 'tree-name', playlist.name || 'Unnamed playlist'));
+    const nested = children.get(playlist.id) || [];
+    button.append(makeElement('span', 'tree-glyph', nested.length ? '' : '♫'), makeElement('span', 'tree-name', playlist.name || 'Unnamed playlist'));
     if (!playlist.valid) {
       button.title = 'This playlist has validation issues.';
       button.append(makeElement('span', 'tree-invalid'));
     }
-    item.append(button);
-    const nested = children.get(playlist.id) || [];
     if (nested.length) {
       const sublist = document.createElement('ul');
+      sublist.id = `playlist-children-${visited.size}`;
+      sublist.hidden = collapsedPlaylists.has(playlist.id);
+      const toggle = makeElement('button', 'tree-toggle');
+      toggle.type = 'button';
+      toggle.dataset.playlistId = playlist.id;
+      toggle.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      toggle.setAttribute('aria-controls', sublist.id);
+      const updateToggle = () => {
+        toggle.setAttribute('aria-expanded', String(!sublist.hidden));
+        const label = `${sublist.hidden ? 'Expand' : 'Collapse'} ${playlist.name}`;
+        toggle.setAttribute('aria-label', label);
+        toggle.title = label;
+      };
+      updateToggle();
+      toggle.addEventListener('click', () => {
+        sublist.hidden = !sublist.hidden;
+        if (sublist.hidden) collapsedPlaylists.add(playlist.id);
+        else collapsedPlaylists.delete(playlist.id);
+        saveCollapsedPlaylists();
+        updateToggle();
+      });
+      row.append(toggle, button);
+      item.append(row);
       for (const child of nested) appendNode(child, sublist);
       item.append(sublist);
+    } else {
+      row.append(button);
+      item.append(row);
     }
     parentList.append(item);
   };
@@ -1596,7 +1531,7 @@ function renderSearchView(query) {
 }
 
 function render() {
-  updateSpotifyDestinationChoices();
+  spotifyUI.updateDestinations();
   youtubeUI.updateDestinations();
   renderTree();
   renderIssues();
@@ -1604,22 +1539,29 @@ function render() {
   const query = libraryQuery.trim();
   const isSearchingLibrary = query.length > 0;
   const isSettings = currentSection === 'settings';
-  const isExport = currentSection === 'youtube-export';
+  const isImport = currentSection === 'import';
+  const isExport = ['youtube-export', 'spotify-export'].includes(currentSection);
   const playlist = library.playlists.find((item) => item.id === selectedId);
-  const isHome = !isExport && !isSettings && !isSearchingLibrary && !playlist && library.playlists.length > 0;
+  const isHome = !isImport && !isExport && !isSettings && !isSearchingLibrary && !playlist && library.playlists.length > 0;
   elements.librarySearchView.hidden = !isSearchingLibrary;
   elements.homeView.hidden = isSettings || !isHome;
   elements.settingsView.hidden = !isSettings;
-  document.getElementById('youtubeExportView').hidden = !isExport;
-  elements.emptyState.hidden = isExport || isSettings || isSearchingLibrary || library.playlists.length > 0;
-  elements.playlistView.hidden = isExport || isSettings || isSearchingLibrary || !playlist;
+  elements.importView.hidden = !isImport;
+  document.getElementById('youtubeExportView').hidden = currentSection !== 'youtube-export';
+  document.getElementById('spotifyExportView').hidden = currentSection !== 'spotify-export';
+  elements.emptyState.hidden = isImport || isExport || isSettings || isSearchingLibrary || library.playlists.length > 0;
+  elements.playlistView.hidden = isImport || isExport || isSettings || isSearchingLibrary || !playlist;
   elements.homeButton.classList.toggle('is-active', isHome);
   elements.settingsButton.classList.toggle('is-active', isSettings);
+  elements.importButton.classList.toggle('is-active', isImport);
+  if (isImport) elements.importButton.setAttribute('aria-current', 'page');
+  else elements.importButton.removeAttribute('aria-current');
   if (isHome) elements.homeButton.setAttribute('aria-current', 'page');
   else elements.homeButton.removeAttribute('aria-current');
   if (isSettings) elements.settingsButton.setAttribute('aria-current', 'page');
   else elements.settingsButton.removeAttribute('aria-current');
-  if (isExport) { youtubeUI.renderExport(exportViewId); return; }
+  if (isExport) { (currentSection === 'spotify-export' ? spotifyExports.render : youtubeUI.renderExport)(exportViewId); return; }
+  if (isImport) { renderImportProvider(); return; }
   if (isSettings) return;
   if (isSearchingLibrary) {
     renderSearchView(query);
@@ -1702,6 +1644,7 @@ async function changePlaylistParent(file, parent) {
       body: JSON.stringify({ file, parent }),
     });
     library = result.library;
+    revealPlaylistAncestors(file);
     render();
     showToast(parent ? `Moved under ${parent}.` : 'Playlist moved to the root.');
   } catch (error) {
@@ -1800,23 +1743,24 @@ function initializeSidebarResizer() {
 elements.librarySearchForm.addEventListener('submit', (event) => event.preventDefault());
 elements.homeButton.addEventListener('click', goHome);
 elements.settingsButton.addEventListener('click', goToSettings);
+elements.importButton.addEventListener('click', () => goToImport());
+for (const provider of ['youtube', 'spotify']) {
+  const tab = document.getElementById(`${provider}ImportTab`);
+  tab.addEventListener('click', () => goToImport(provider));
+  tab.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 'youtube' : event.key === 'End' ? 'spotify' : provider === 'youtube' ? 'spotify' : 'youtube';
+    goToImport(next);
+    document.getElementById(`${next}ImportTab`).focus();
+  });
+}
 elements.settingsForm.addEventListener('submit', (event) => saveSettings(event).catch(() => {}));
 elements.githubAutoSyncInput.addEventListener('change', async () => {
   elements.githubAutoSyncInput.disabled = true;
   try { await saveSettings(); }
   catch { elements.githubAutoSyncInput.checked = syncStatus?.autoSync === true; }
   finally { elements.githubAutoSyncInput.disabled = false; }
-});
-elements.spotifyConnectButton.addEventListener('click', connectSpotify);
-elements.spotifyDisconnectButton.addEventListener('click', disconnectSpotify);
-elements.spotifyLoadPlaylistsButton.addEventListener('click', loadSpotifyPlaylists);
-elements.spotifyPlaylistSearch.addEventListener('input', renderSpotifyPlaylists);
-window.addEventListener('message', async (event) => {
-  if (event.source !== spotifyAuthPopup || event.data?.type !== 'playlista-spotify-auth') return;
-  spotifyAuthPopup = null;
-  await refreshSpotifyStatus();
-  if (event.data.success && spotifyConnected) showToast('Spotify connected.');
-  else elements.spotifyAuthStatus.textContent = 'Spotify sign-in was not completed';
 });
 elements.chooseGithubAccountButton.addEventListener('click', openGithubAccountPicker);
 elements.acceptGithubAccountButton.addEventListener('click', acceptGithubAccount);
@@ -1989,4 +1933,7 @@ renderQuickAddEditor();
 initializeNavigationHistory();
 initializeSidebarResizer();
 refreshLibrary(null);
+Promise.all([spotifyUI.refresh(), youtubeUI.refresh()]);
 window.setInterval(checkServerHealth, 5000);
+
+for (const input of [elements.githubOwnerInput, elements.githubRepositoryInput]) input.addEventListener('input', renderGitHubRepositoryLink);

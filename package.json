@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "setup:youtube": "node scripts/setup-youtube.js",
+    "setup:youtube": "node scripts/setup-integration.js youtube",
+    "setup:spotify": "node scripts/setup-integration.js spotify",
     "lint:playlists": "node src/cli.js",
     "test": "node --test"
   }

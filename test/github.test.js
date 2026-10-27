@@ -8,11 +8,12 @@ function playlist(name, tracks = ['Sum 41 > In Too Deep']) {
   return serializePlaylist({ name, created: '2026-10-26T10:00:00.000Z', updated: '2026-10-26T10:00:00.000Z' }) + tracks.join('\n') + '\n';
 }
 
-function setup({ localFiles = { 'punk.lista': playlist('Punk') }, remoteFiles = {}, initialized = false, branchFailure = 409 } = {}) {
+function setup({ localFiles = { 'punk.lista': playlist('Punk') }, remoteFiles = {}, initialized = false, branchFailure = 409, missingRepository = false, repositoryError, defaultBranch = 'main' } = {}) {
   const local = new Map(Object.entries(localFiles));
   const remote = new Map(Object.entries(remoteFiles));
   const raw = { github: { owner: 'personal', repository: 'music', branch: 'main', login: 'personal', autoSync: false, folder: 'obsolete' }, syncState: {} };
   const writes = [];
+  const creations = [];
   let time = '2026-10-26T11:00:00.000Z';
   let failPath = '';
   let invalid = false;
@@ -36,10 +37,23 @@ function setup({ localFiles = { 'punk.lista': playlist('Punk') }, remoteFiles = 
   };
   const request = async (url, options = {}, login) => {
     assert.equal(login, 'personal');
-    const endpoint = new URL(url).pathname.replace('/repos/personal/music', '');
+    const endpoint = new URL(url).pathname.replace(`/repos/${raw.github.owner || raw.github.login}/${raw.github.repository || 'playlista-playlists'}`, '');
     const fail = (status, message) => { throw Object.assign(new Error(message), { githubStatus: status, githubMessage: message }); };
-    if (endpoint === '') return { default_branch: 'main' };
-    if (endpoint === '/branches/main') {
+    if (endpoint === '/user') return { login: 'personal' };
+    if (endpoint === '/user/repos' && options.method === 'POST') {
+      const body = JSON.parse(options.body);
+      assert.equal(body.private, true);
+      assert.equal(body.auto_init, false);
+      creations.push(body);
+      missingRepository = false;
+      return { default_branch: defaultBranch, private: true };
+    }
+    if (endpoint === '') {
+      if (repositoryError) return fail(repositoryError, 'Cannot access repository');
+      if (missingRepository) return fail(404, 'Not found');
+      return { default_branch: defaultBranch };
+    }
+    if (endpoint === `/branches/${defaultBranch}`) {
       if (!initialized) return fail(branchFailure, 'Git Repository is empty.');
       return { commit: { commit: { tree: { sha: 'tree-sha' } } } };
     }
@@ -57,7 +71,7 @@ function setup({ localFiles = { 'punk.lista': playlist('Punk') }, remoteFiles = 
       const body = JSON.parse(options.body);
       if (path === failPath) return fail(409, 'Concurrent update');
       if (!initialized) assert.equal(body.branch, undefined, 'the Contents API must bootstrap the default branch');
-      else assert.equal(body.branch, 'main');
+      else assert.equal(body.branch, raw.github.branch || defaultBranch);
       if (remote.has(path)) assert.equal(body.sha, sha(remote.get(path)));
       initialized = true;
       const text = Buffer.from(body.content, 'base64').toString('utf8');
@@ -68,8 +82,48 @@ function setup({ localFiles = { 'punk.lista': playlist('Punk') }, remoteFiles = 
     assert.fail(`Unexpected GitHub request: ${options.method || 'GET'} ${endpoint}`);
   };
   const service = createGitHubService({ storage, settings, request, now: () => time });
-  return { service, local, remote, writes, raw, setTime: (value) => { time = value; }, failWritesTo: (value) => { failPath = value; }, makeInvalid: () => { invalid = true; }, onBlob: (hook) => { blobHook = hook; } };
+  return { service, local, remote, writes, creations, raw, setTime: (value) => { time = value; }, failWritesTo: (value) => { failPath = value; }, makeInvalid: () => { invalid = true; }, onBlob: (hook) => { blobHook = hook; } };
 }
+
+test('the selected GitHub account gets a private default repository on explicit connection', async () => {
+  const app = setup({ missingRepository: true });
+  app.raw.github.owner = app.raw.github.repository = app.raw.github.branch = '';
+  assert.equal((await app.service.getStatus()).repository, 'personal/playlista-playlists');
+  await assert.rejects(app.service.checkStatus(), /Not found/);
+  assert.equal(app.creations.length, 0, 'background checks must not create repositories');
+  await app.service.testConnection();
+  assert.equal(app.creations[0].name, 'playlista-playlists');
+  await app.service.sync('push');
+  assert.equal(app.creations.length, 1);
+  assert.equal(app.remote.size, 1);
+  assert.equal((await app.service.getStatus()).pendingFiles, 0);
+});
+
+test('automatic saving can create the default repo and automatic branch selection tracks its default', async () => {
+  const app = setup({ missingRepository: true, defaultBranch: 'master' });
+  app.raw.github.owner = app.raw.github.repository = app.raw.github.branch = '';
+  await app.service.sync('auto');
+  assert.equal(app.creations.length, 1);
+  assert.equal((await app.service.getStatus()).pendingFiles, 0);
+  app.local.set('punk.lista', playlist('Punk', ['Green Day > Basket Case']));
+  await app.service.sync('auto');
+  assert.equal(app.writes[1].body.branch, 'master');
+  assert.equal((await app.service.getStatus()).pendingFiles, 0);
+});
+
+test('repository creation never follows access denials or an invalid local library', async () => {
+  const denied = setup({ repositoryError: 403 });
+  await assert.rejects(denied.service.testConnection(), /Cannot access/);
+  assert.equal(denied.creations.length, 0);
+  const invalid = setup({ missingRepository: true });
+  invalid.makeInvalid();
+  await assert.rejects(invalid.service.sync('push'), /validation/);
+  assert.equal(invalid.creations.length, 0);
+  const other = setup({ missingRepository: true });
+  other.raw.github.owner = 'someone-else';
+  await assert.rejects(other.service.testConnection(), /selected account/);
+  assert.equal(other.creations.length, 0);
+});
 
 test('first save initializes a 409 empty repository through Contents and mirrors relative paths at its root', async () => {
   const app = setup({ localFiles: { 'punk.lista': playlist('Punk'), 'nested/90s.lista': playlist('90s') } });

@@ -20,7 +20,7 @@ const {
 const appSettings = require('./app-settings');
 const github = require('./github');
 const { createSyncManager } = require('./sync-manager');
-const spotify = require('./spotify');
+const { createSpotifyService } = require('./spotify');
 const { createYouTubeService } = require('./youtube');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -32,6 +32,7 @@ const STATIC_FILES = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/playlist-ui.js', ['playlist-ui.js', 'text/javascript; charset=utf-8']],
+  ['/music-import-ui.js', ['music-import-ui.js', 'text/javascript; charset=utf-8']],
   ['/youtube-ui.js', ['youtube-ui.js', 'text/javascript; charset=utf-8']],
   ['/youtube-export-ui.js', ['youtube-export-ui.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']],
@@ -54,24 +55,6 @@ function sendJson(response, statusCode, value) {
     'x-content-type-options': 'nosniff',
   });
   response.end(JSON.stringify(value));
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (character) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  })[character]);
-}
-
-function sendSpotifyCallback(response, success, message) {
-  const content = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Spotify · Playlista</title><body style="font:16px system-ui,sans-serif;max-width:520px;margin:15vh auto;padding:24px;color:#202820"><h1>${success ? 'Spotify connected' : 'Spotify could not connect'}</h1><p>${escapeHtml(message)}</p><p>You can close this window and return to Playlista.</p><script>history.replaceState({},'',location.pathname);if(window.opener)window.opener.postMessage({type:'playlista-spotify-auth',success:${Boolean(success)}},'*');if(${Boolean(success)})setTimeout(()=>window.close(),500)</script></body></html>`;
-  response.writeHead(200, {
-    'content-type': 'text/html; charset=utf-8',
-    'cache-control': 'no-store',
-    'referrer-policy': 'no-referrer',
-    'x-content-type-options': 'nosniff',
-    'x-frame-options': 'DENY',
-  });
-  response.end(content);
 }
 
 async function readJson(request, maximum = MAX_BODY_BYTES) {
@@ -112,7 +95,7 @@ async function serveStatic(requestPath, response) {
   response.end(content);
 }
 
-function createServer(syncManager, youtube) {
+function createServer(syncManager, youtube, spotify) {
   const server = http.createServer(async (request, response) => {
   if (!isLocalHost(request.headers.host)) {
     response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
@@ -147,67 +130,40 @@ function createServer(syncManager, youtube) {
     }
     if (request.method === 'GET' && url.pathname === '/api/settings') {
       const settings = appSettings.publicSettings({ getPlaylistsDirectory });
-      settings.spotify.redirectUri = `http://127.0.0.1:${request.socket.localPort}/spotify/callback`;
       sendJson(response, 200, settings);
       return;
     }
-    if (request.method === 'GET' && url.pathname === '/api/spotify/status') {
-      sendJson(response, 200, spotify.getStatus());
-      return;
-    }
-    if (request.method === 'GET' && url.pathname === '/api/youtube/status') {
-      sendJson(response, 200, await youtube.status());
-      return;
-    }
-    if (request.method === 'GET' && url.pathname === '/api/youtube/playlists') {
-      sendJson(response, 200, { playlists: await youtube.playlists() });
-      return;
-    }
-    if (request.method === 'GET' && url.pathname === '/api/youtube/export') {
-      sendJson(response, 200, youtube.getExport(url.searchParams.get('id'), { summary: url.searchParams.get('summary') === 'true' }));
-      return;
-    }
-    if (request.method === 'POST' && url.pathname.startsWith('/api/youtube/')) {
-      const input = await readJson(request, url.pathname === '/api/youtube/export' ? 256 * 1024 : MAX_BODY_BYTES);
-      const actions = {
-        '/api/youtube/connect': () => youtube.previewConnection(input),
-        '/api/youtube/accept': () => youtube.acceptConnection(input),
-        '/api/youtube/disconnect': () => youtube.disconnect(),
-        '/api/youtube/export/prepare': () => youtube.prepareExport(input),
-        '/api/youtube/export/search': () => youtube.searchRow(input),
-        '/api/youtube/export/cancel': () => youtube.cancelExport(input.id),
-        '/api/youtube/export': () => youtube.exportPlaylist(input),
-        '/api/youtube/import': async () => ({ ...await youtube.importPlaylist(input), library: await getLibrary(), tags: await getTagMetadata() }),
-      };
-      const action = actions[url.pathname];
-      if (!action) throw new StoreError('Unknown YouTube Music operation.', 404);
-      sendJson(response, url.pathname === '/api/youtube/import' ? 201 : 200, await action());
-      return;
-    }
-    if (request.method === 'POST' && url.pathname === '/api/spotify/connect') {
-      const input = await readJson(request);
-      sendJson(response, 200, spotify.beginAuthorization(input.clientId, request.socket.localPort));
-      return;
-    }
-    if (request.method === 'POST' && url.pathname === '/api/spotify/disconnect') {
-      sendJson(response, 200, spotify.disconnect());
-      return;
-    }
-    if (request.method === 'GET' && url.pathname === '/api/spotify/playlists') {
-      sendJson(response, 200, { playlists: await spotify.getPlaylists() });
-      return;
-    }
-    if (request.method === 'POST' && url.pathname === '/api/spotify/import') {
-      const input = await readJson(request);
-      const imported = await spotify.importPlaylist(input);
-      const result = await getLibrary();
-      sendJson(response, 201, { ...imported, library: result, tags: await getTagMetadata() });
-      return;
+    const musicRoute = /^\/api\/(youtube|spotify)\/(.+)$/.exec(url.pathname);
+    if (musicRoute) {
+      const service = musicRoute[1] === 'youtube' ? youtube : spotify;
+      const action = musicRoute[2];
+      if (request.method === 'GET') {
+        if (action === 'status') sendJson(response, 200, await service.status());
+        else if (action === 'playlists') sendJson(response, 200, { playlists: await service.getPlaylists() });
+        else if (action === 'export') sendJson(response, 200, service.getExport(url.searchParams.get('id'), { summary: url.searchParams.get('summary') === 'true' }));
+        else throw new StoreError('Unknown music-service operation.', 404);
+        return;
+      }
+      if (request.method === 'POST') {
+        const input = await readJson(request, action === 'export' ? 256 * 1024 : MAX_BODY_BYTES);
+        const actions = {
+          connect: () => service.previewConnection(input),
+          accept: () => service.acceptConnection(input),
+          disconnect: () => service.disconnect(),
+          'export/prepare': () => service.prepareExport(input),
+          'export/search': () => service.searchRow(input),
+          'export/cancel': () => service.cancelExport(input.id),
+          export: () => service.exportPlaylist(input),
+          import: async () => ({ ...await service.importPlaylist(input), library: await getLibrary(), tags: await getTagMetadata() }),
+        };
+        if (!actions[action]) throw new StoreError('Unknown music-service operation.', 404);
+        sendJson(response, action === 'import' ? 201 : 200, await actions[action]());
+        return;
+      }
     }
     if (request.method === 'POST' && url.pathname === '/api/settings') {
       const input = await readJson(request);
       const settings = await appSettings.saveSettings(input, { getPlaylistsDirectory, setPlaylistsDirectory });
-      settings.spotify.redirectUri = `http://127.0.0.1:${request.socket.localPort}/spotify/callback`;
       sendJson(response, 200, { settings, library: await getLibrary() });
       return;
     }
@@ -294,15 +250,6 @@ function createServer(syncManager, youtube) {
       return;
     }
     if (request.method === 'GET') {
-      if (url.pathname === '/spotify/callback') {
-        try {
-          await spotify.completeAuthorization(url);
-          sendSpotifyCallback(response, true, 'Your Spotify playlists are ready to import.');
-        } catch (error) {
-          sendSpotifyCallback(response, false, error.message || 'Return to Playlista and try again.');
-        }
-        return;
-      }
       await serveStatic(url.pathname, response);
       return;
     }
@@ -321,7 +268,7 @@ function createServer(syncManager, youtube) {
   return server;
 }
 
-async function startServer({ port = Number.parseInt(process.env.PORT || String(DEFAULT_PORT), 10), host = '127.0.0.1', youtube: suppliedYouTube } = {}) {
+async function startServer({ port = Number.parseInt(process.env.PORT || String(DEFAULT_PORT), 10), host = '127.0.0.1', youtube: suppliedYouTube, spotify: suppliedSpotify } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new Error('PORT must be a number between 1 and 65535.');
   }
@@ -329,8 +276,9 @@ async function startServer({ port = Number.parseInt(process.env.PORT || String(D
   await getLibrary();
   const syncManager = createSyncManager();
   const youtube = suppliedYouTube || createYouTubeService();
-  const server = createServer(syncManager, youtube);
-  server.once('close', () => { syncManager.stop(); youtube.close(); });
+  const spotify = suppliedSpotify || createSpotifyService();
+  const server = createServer(syncManager, youtube, spotify);
+  server.once('close', () => { syncManager.stop(); youtube.close(); spotify.close(); });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(port, host, resolve);

@@ -1,0 +1,2 @@
+# 1.2.8 imports these optional modules at startup; no database services are used.
+spotapi[pymongo,redis,websocket]==1.2.8

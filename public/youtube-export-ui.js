@@ -1,12 +1,12 @@
-window.createYouTubeExportUI = function ({ request, getLibrary, getSelectedId, openSettings, onExportView }) {
+window.createMusicExportUI = function ({ request, getLibrary, getSelectedId, openSettings, onExportView, key = 'youtube', label = 'YouTube Music' }) {
   const ids = ['Button', 'Heading', 'Progress', 'Stats', 'Rows', 'Error', 'Result', 'Cancel', 'Filter', 'Pagination', 'Previous', 'Next', 'Page'];
-  const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(`youtubeExport${id}`)]));
+  const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(`${key}Export${id}`)]));
   const reports = new Map();
   const pageSize = 50;
   let runningId = null;
   let displayedId = null;
   let opening = false;
-  const post = (action, body) => request(`/api/youtube/${action}`, {
+  const post = (action, body) => request(`/api/${key}/${action}`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
   });
   function element(tag, className, text) {
@@ -30,7 +30,7 @@ window.createYouTubeExportUI = function ({ request, getLibrary, getSelectedId, o
       const target = element('div', 'youtube-export-track');
       if (row.match) {
         const link = element('a', '', row.match.title);
-        link.href = `https://music.youtube.com/watch?v=${encodeURIComponent(row.match.id)}`;
+        link.href = key === 'spotify' ? `https://open.spotify.com/track/${encodeURIComponent(row.match.id)}` : `https://music.youtube.com/watch?v=${encodeURIComponent(row.match.id)}`;
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         target.append(link, element('span', '', row.match.artist));
@@ -64,9 +64,9 @@ window.createYouTubeExportUI = function ({ request, getLibrary, getSelectedId, o
       return;
     }
     el.Heading.textContent = report.name;
-    const account = `${report.account.name}${report.account.handle ? ` (${report.account.handle})` : ''}`;
+    const account = `${report.account.name}${report.account.handle || report.account.id ? ` (${report.account.handle || report.account.id})` : ''}`;
     el.Progress.textContent = report.status === 'matching' ? `${account} · Matching ${report.completed} / ${report.total} songs…`
-      : report.status === 'exporting' || report.status === 'ready' ? `${account} · Creating private playlist…`
+      : report.status === 'exporting' || report.status === 'ready' ? `${account} · Creating ${key === 'youtube' ? 'private ' : ''}playlist…`
       : report.status === 'cancelled' ? 'Export cancelled.' : account;
     el.Cancel.hidden = report.status !== 'matching';
     el.Cancel.disabled = false;
@@ -83,7 +83,7 @@ window.createYouTubeExportUI = function ({ request, getLibrary, getSelectedId, o
     el.Result.replaceChildren();
     if (result.warning) el.Result.append(element('p', '', result.warning));
     if (result.url) {
-      const link = element('a', '', 'Open playlist in YouTube Music ↗');
+      const link = element('a', '', `Open playlist in ${label}`);
       link.href = result.url;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
@@ -95,7 +95,7 @@ window.createYouTubeExportUI = function ({ request, getLibrary, getSelectedId, o
   async function poll(id) {
     if (runningId !== id) return;
     try {
-      const result = await request(`/api/youtube/export?id=${encodeURIComponent(id)}&summary=true`);
+      const result = await request(`/api/${key}/export?id=${encodeURIComponent(id)}&summary=true`);
       if (runningId !== id) return;
       Object.assign(reports.get(id), result);
       if (displayedId === id) render(id);
@@ -103,7 +103,7 @@ window.createYouTubeExportUI = function ({ request, getLibrary, getSelectedId, o
       else { runningId = null; el.Button.disabled = false; }
     } catch (error) {
       const report = reports.get(id);
-      report.error = `${error.message} Check YouTube Music before starting another export.`;
+      report.error = `${error.message} Check the music service before starting another export.`;
       report.status = 'failed';
       runningId = null;
       el.Button.disabled = false;
@@ -116,10 +116,10 @@ window.createYouTubeExportUI = function ({ request, getLibrary, getSelectedId, o
     el.Button.disabled = true;
     const file = getSelectedId();
     try {
-      const status = await request('/api/youtube/status');
+      const status = await request(`/api/${key}/status`);
       if (!status.connected || !status.runtime.available) {
         await openSettings();
-        const details = document.getElementById('youtubeConnectionDetails');
+        const details = document.getElementById(`${key}ConnectionDetails`);
         details.open = true;
         details.scrollIntoView({ block: 'center' });
         return;
@@ -131,7 +131,7 @@ window.createYouTubeExportUI = function ({ request, getLibrary, getSelectedId, o
       poll(plan.id);
     } catch (error) {
       const id = `failed-${Date.now()}`;
-      reports.set(id, { name: getLibrary().playlists.find((p) => p.id === file)?.name || 'Export', account: { name: 'YouTube Music' }, status: 'failed', error: error.message, filter: 'all', page: 0 });
+      reports.set(id, { name: getLibrary().playlists.find((p) => p.id === file)?.name || 'Export', account: { name: label }, status: 'failed', error: error.message, filter: 'all', page: 0 });
       onExportView(id);
     } finally { opening = false; el.Button.disabled = Boolean(runningId); }
   }
