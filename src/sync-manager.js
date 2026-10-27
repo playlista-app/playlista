@@ -35,11 +35,11 @@ function createSyncManager({ service = github, settings = appSettings, debounceM
     debounce = null;
   }
 
-  function sync(direction) {
+  function sync(direction, file) {
     cancelScheduledSync();
     return enqueue(() => {
       if (direction === 'auto' && (stopped || settings.getRawSettings().github.autoSync !== true)) return { cancelled: true };
-      return service.sync(direction);
+      return service.sync(direction, file);
     }, 'syncing');
   }
 

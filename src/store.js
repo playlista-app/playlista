@@ -451,15 +451,15 @@ async function addSong(input) {
   return { file: target.file };
 }
 
-async function importSpotifySongs(input) {
+async function importSongs(input) {
   const records = await loadRecords(playlistsDirectory, true);
   assertWritable(records, validateCollection(records));
-  if (!Array.isArray(input.songs) || input.songs.length === 0) throw new StoreError('The Spotify playlist has no importable songs.');
+  if (!Array.isArray(input.songs) || input.songs.length === 0) throw new StoreError('The playlist has no importable songs.');
   if (input.songs.length > 10000) throw new StoreError('A single import is limited to 10,000 songs.');
   const songs = input.songs.map((item) => {
     const artist = cleanText(item?.artist, 'artist', { optional: true });
     const title = cleanText(item?.title, 'title', { optional: true });
-    if (!artist && !title) throw new StoreError('Spotify returned a song without an artist or title.');
+    if (!artist && !title) throw new StoreError('An imported song has no artist or title.');
     return { artist, title, tags: [] };
   });
   const trackLines = songs.map(serializeTrack);
@@ -486,7 +486,7 @@ async function importSpotifySongs(input) {
   const now = new Date().toISOString();
   const header = serializePlaylist({ name, description, created: now, updated: now });
   const text = `${header}${trackLines.join('\n')}\n`;
-  const candidate = parsePlaylistText(text, '<Spotify import>');
+  const candidate = parsePlaylistText(text, '<playlist import>');
   const issues = validateCollection([...records, candidate]);
   if (issues.length) throw new StoreError(issues[0].message, 400);
 
@@ -680,7 +680,8 @@ module.exports = {
   setPlaylistParent: serializeAccess(setPlaylistParent),
   updatePlaylist: serializeAccess(updatePlaylist),
   addSong: serializeAccess(addSong),
-  importSpotifySongs: serializeAccess(importSpotifySongs),
+  importSongs: serializeAccess(importSongs),
+  importSpotifySongs: serializeAccess(importSongs),
   setSongTags: serializeAccess(setSongTags),
   removeSong: serializeAccess(removeSong),
   moveSong: serializeAccess(moveSong),

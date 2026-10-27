@@ -3,6 +3,7 @@ const { promisify } = require('node:util');
 const { createHash } = require('node:crypto');
 const store = require('./store');
 const appSettings = require('./app-settings');
+const { parsePlaylistText, validateCollection } = require('./format');
 
 const execFileAsync = promisify(execFile);
 const API_ROOT = 'https://api.github.com';
@@ -241,8 +242,9 @@ function createGitHubService({ storage = store, settings = appSettings, request 
     return { connected: true, account: config.login, repository: `${config.owner}/${config.repository}`, playlistFiles: remote.files.size, emptyRepository: remote.emptyRepository };
   }
 
-  async function sync(direction) {
-    if (!['pull', 'push', 'auto'].includes(direction)) throw Object.assign(new Error('Unknown sync direction.'), { statusCode: 400 });
+  async function sync(direction, file) {
+    if (!['pull', 'push', 'both', 'auto'].includes(direction)) throw Object.assign(new Error('Unknown sync direction.'), { statusCode: 400 });
+    if (file !== undefined && (typeof file !== 'string' || !file)) throw Object.assign(new Error('Choose a playlist to sync.'), { statusCode: 400 });
     const config = configuration(true);
     const [remote, validation] = await Promise.all([remotePlaylists(config), storage.validateDirectory(config.directory)]);
     if (validation.issues.length) throw Object.assign(new Error('Fix playlist validation errors before syncing.'), { statusCode: 409 });
@@ -254,9 +256,26 @@ function createGitHubService({ storage = store, settings = appSettings, request 
     const uploads = [];
     const canPull = direction !== 'push';
     const canPush = direction !== 'pull';
-    const paths = [...new Set([...local.keys(), ...remote.files.keys()])].sort();
+    const allPaths = [...new Set([...local.keys(), ...remote.files.keys()])].sort();
+    const selected = new Set(file === undefined ? allPaths : [file]);
+    if (file !== undefined) {
+      if (!local.has(file) && !remote.files.has(file)) throw Object.assign(new Error('Playlist was not found. Refresh and try again.'), { statusCode: 404 });
+      const named = (files) => new Map([...files].map(([path, text]) => [path, parsePlaylistText(text, path).playlist]));
+      const localPlaylists = named(local);
+      const remotePlaylists = named(remote.files);
+      // Include missing ancestors so a new child can be saved or imported on its own.
+      for (const path of selected) {
+        for (const [source, destination] of [[localPlaylists, remotePlaylists], [remotePlaylists, localPlaylists]]) {
+          const parent = source.get(path)?.parent?.toLowerCase();
+          if (!parent || [...destination.values()].some((playlist) => playlist.name?.toLowerCase() === parent)) continue;
+          const ancestor = [...source].find(([, playlist]) => playlist.name?.toLowerCase() === parent)?.[0];
+          if (ancestor) selected.add(ancestor);
+        }
+      }
+    }
+    const paths = allPaths.filter((path) => selected.has(path));
     const variants = new Map();
-    for (const file of paths) {
+    for (const file of allPaths) {
       const key = file.toLowerCase();
       variants.set(key, [...(variants.get(key) || []), file]);
     }
@@ -286,6 +305,12 @@ function createGitHubService({ storage = store, settings = appSettings, request 
       } else result.conflicts.push(file);
     }
     try {
+      if (file !== undefined && uploads.length) {
+        const prospective = new Map(remote.files);
+        for (const change of uploads) prospective.set(change.path, change.text);
+        const issues = validateCollection([...prospective].map(([path, text]) => parsePlaylistText(text, path)));
+        if (issues.length) throw Object.assign(new Error(`Sync the related playlist changes together from Settings: ${issues[0].message}`), { statusCode: 409 });
+      }
       if (imports.length) {
         await storage.applyPlaylistFiles(imports, config.directory);
         for (const change of imports) {

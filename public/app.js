@@ -44,6 +44,7 @@ const elements = {
   homeTagCount: document.querySelector('#homeTagCount'),
   tagManager: document.querySelector('#tagManager'),
   playlistEditButton: document.querySelector('#playlistEditButton'),
+  playlistSyncButton: document.querySelector('#playlistSyncButton'),
   playlistCount: document.querySelector('#playlistCount'),
   emptyState: document.querySelector('#emptyState'),
   playlistView: document.querySelector('#playlistView'),
@@ -108,10 +109,40 @@ let pendingGithubLogin = '';
 let selectedGithubLogin = '';
 let syncStatus = null;
 let lastLibraryFingerprint = null;
+let playlistSyncInFlight = false;
 let spotifyConnected = false;
 let spotifyPlaylists = [];
 let spotifyAuthPopup = null;
 let spotifyImportInFlight = false;
+let exportViewId = null;
+const recentImports = new Map();
+const youtubeUI = window.createYouTubeUI({
+  request: requestJson, getLibrary: () => library, getSelectedId: () => selectedId,
+  openSettings: goToSettings,
+  onExportView(id) {
+    applyNavigation({ selectedId, query: '', section: 'youtube-export', exportId: id }, { historyMode: 'push' });
+  },
+  onImport(result) {
+    library = result.library;
+    tagRegistry = result.tags;
+    const expires = Date.now() + 2600;
+    recentImports.set(result.file, expires);
+    render();
+    const button = [...elements.tree.querySelectorAll('.tree-button')].find((item) => item.dataset.playlistId === result.file);
+    if (button) {
+      const bounds = button.getBoundingClientRect();
+      const treeBounds = elements.tree.getBoundingClientRect();
+      if (bounds.top < treeBounds.top) elements.tree.scrollTop -= treeBounds.top - bounds.top;
+      else if (bounds.bottom > treeBounds.bottom) elements.tree.scrollTop += bounds.bottom - treeBounds.bottom;
+    }
+    setTimeout(() => {
+      if (recentImports.get(result.file) !== expires) return;
+      recentImports.delete(result.file);
+      [...elements.tree.querySelectorAll('.tree-button')].find((item) => item.dataset.playlistId === result.file)?.classList.remove('is-imported');
+    }, 2600);
+    showToast(`${result.imported} songs imported.`);
+  },
+});
 
 function byName(name) {
   return library.playlists.find((playlist) => playlist.name?.toLocaleLowerCase('en-US') === name?.toLocaleLowerCase('en-US'));
@@ -138,7 +169,7 @@ async function requestJson(url, options) {
   if (result.library?.revision) lastLibraryFingerprint = result.library.revision;
   if (result.sync) applySyncStatus(result.sync);
   if (options?.method === 'POST' && (/^\/api\/(songs|playlists)(\/|$)/.test(url)
-    || ['/api/settings', '/api/tags/update', '/api/github/account', '/api/spotify/import'].includes(url))) {
+    || ['/api/settings', '/api/tags/update', '/api/github/account', '/api/spotify/import', '/api/youtube/import'].includes(url))) {
     setTimeout(() => refreshSyncStatus(), 0);
   }
   return result;
@@ -183,6 +214,47 @@ function renderPlaylistSyncStatus(playlist) {
   chip.classList.toggle('is-pending', !synced);
   chip.title = syncStatus?.error || (file?.status === 'path-conflict' ? 'Local and remote filenames differ only by letter case. Match their spelling before syncing.'
     : synced && file.syncedAt ? new Date(file.syncedAt).toLocaleString() : syncStatus?.autoSync ? 'Waiting for GitHub sync.' : 'Auto-sync is off.');
+  elements.playlistSyncButton.hidden = synced;
+  elements.playlistSyncButton.disabled = playlistSyncInFlight || syncStatus?.activity === 'syncing';
+  elements.playlistSyncButton.textContent = playlistSyncInFlight ? 'Syncing…' : 'Sync';
+  elements.playlistSyncButton.title = syncStatus?.configured ? 'Sync this playlist with GitHub' : 'Set up GitHub sync';
+}
+
+async function syncCurrentPlaylist() {
+  const playlist = library.playlists.find((item) => item.id === selectedId);
+  if (!playlist || playlistSyncInFlight) return;
+  if (!syncStatus?.configured) {
+    await goToSettings();
+    showToast('Choose a GitHub repository and account to sync.');
+    return;
+  }
+  const file = syncStatus.files.find((item) => item.file === playlist.id);
+  if (['conflict', 'path-conflict'].includes(file?.status)) {
+    await goToSettings();
+    showToast('Review the sync conflict in Settings.');
+    return;
+  }
+  playlistSyncInFlight = true;
+  renderPlaylistSyncStatus(playlist);
+  try {
+    const result = await requestJson('/api/github/sync', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ direction: 'both', file: playlist.id }),
+    });
+    library = result.library;
+    tagRegistry = result.tags;
+    render();
+    if (result.conflicts.length) {
+      await goToSettings();
+      showToast('Review the sync conflict in Settings.');
+    } else showToast(`${playlist.name} synced to GitHub.`);
+  } catch (error) { showToast(error.message); }
+  finally {
+    playlistSyncInFlight = false;
+    const current = library.playlists.find((item) => item.id === selectedId);
+    if (current) renderPlaylistSyncStatus(current);
+    await refreshSyncStatus();
+  }
 }
 
 function applySyncStatus(status) {
@@ -492,7 +564,7 @@ function renderQuickAddEditor({ focus = false, caret } = {}) {
 }
 
 function currentNavigationView() {
-  return { selectedId, query: libraryQuery, section: currentSection };
+  return { selectedId, query: libraryQuery, section: currentSection, exportId: exportViewId };
 }
 
 function recordNavigation(view, mode = 'push') {
@@ -503,7 +575,7 @@ function recordNavigation(view, mode = 'push') {
     return;
   }
   const current = appNavigationHistory[appNavigationIndex];
-  if (current && current.selectedId === view.selectedId && current.query === view.query && current.section === view.section) {
+  if (current && current.selectedId === view.selectedId && current.query === view.query && current.section === view.section && current.exportId === view.exportId) {
     return;
   }
   appNavigationHistory = appNavigationHistory.slice(0, appNavigationIndex + 1);
@@ -515,7 +587,8 @@ function recordNavigation(view, mode = 'push') {
 
 function applyNavigation(view, { historyMode = null, resetComposerOnNavigate = false } = {}) {
   const previousId = selectedId;
-  currentSection = view.section === 'settings' ? 'settings' : 'library';
+  currentSection = ['settings', 'youtube-export'].includes(view.section) ? view.section : 'library';
+  exportViewId = view.exportId || null;
   selectedId = library.playlists.some((playlist) => playlist.id === view.selectedId) ? view.selectedId : null;
   libraryQuery = view.query || '';
   elements.librarySearchInput.value = libraryQuery;
@@ -552,13 +625,13 @@ function goHome() {
 async function goToSettings() {
   applyNavigation({ selectedId: null, query: '', section: 'settings' }, { historyMode: 'push', resetComposerOnNavigate: true });
   if (settingsLoaded) {
-    await refreshSpotifyStatus();
+    await Promise.all([refreshSpotifyStatus(), youtubeUI.refresh()]);
     return;
   }
   try {
     const result = await requestJson('/api/settings');
     fillSettings(result);
-    await refreshSpotifyStatus();
+    await Promise.all([refreshSpotifyStatus(), youtubeUI.refresh()]);
   } catch (error) {
     setFormError(elements.settingsError, error.message);
   }
@@ -571,7 +644,7 @@ function fillSettings(settings) {
   elements.githubBranchInput.value = settings.github?.branch || 'main';
   elements.githubAutoSyncInput.checked = settings.github?.autoSync === true;
   elements.spotifyClientIdInput.value = settings.spotify?.clientId || '';
-  elements.spotifyRedirectUri.textContent = settings.spotify?.redirectUri || 'http://127.0.0.1:3000/spotify/callback';
+  elements.spotifyRedirectUri.textContent = settings.spotify?.redirectUri || `http://127.0.0.1:${window.location.port || '43817'}/spotify/callback`;
   selectedGithubLogin = settings.github?.login || '';
   elements.githubAuthStatus.textContent = selectedGithubLogin ? `Using ${selectedGithubLogin}` : 'No account selected';
   settingsLoaded = true;
@@ -937,6 +1010,7 @@ async function checkServerHealth() {
 }
 
 function renderTree() {
+  const scrollTop = elements.tree.scrollTop;
   elements.tree.replaceChildren();
   const playlists = [...library.playlists].sort((left, right) => (left.name || '').localeCompare(right.name || ''));
   elements.playlistCount.textContent = String(playlists.length);
@@ -962,6 +1036,8 @@ function renderTree() {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'tree-button';
+    button.dataset.playlistId = playlist.id;
+    if ((recentImports.get(playlist.id) || 0) > Date.now()) button.classList.add('is-imported');
     if (playlist.id === selectedId) button.setAttribute('aria-current', 'page');
     button.addEventListener('click', () => goToPlaylist(playlist.id));
     button.draggable = true;
@@ -1006,6 +1082,7 @@ function renderTree() {
   for (const root of roots) appendNode(root, list);
   for (const playlist of playlists) appendNode(playlist, list);
   elements.tree.append(list);
+  elements.tree.scrollTop = scrollTop;
 }
 
 function renderIssues() {
@@ -1059,14 +1136,7 @@ function makeMetadataTag(tag) {
 }
 
 function compactDate(value) {
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return { label: value, full: value };
-  const sameYear = date.getFullYear() === new Date().getFullYear();
-  const label = new Intl.DateTimeFormat(undefined, sameYear
-    ? { month: 'long', day: 'numeric' }
-    : { month: 'long', year: 'numeric' }).format(date);
-  const full = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' }).format(date);
-  return { label, full };
+  return PlaylistUI.formatPlaylistDate(value);
 }
 
 function searchForTag(name) {
@@ -1349,6 +1419,7 @@ function renderSongs(playlist) {
   elements.songList.replaceChildren();
   const songs = effectiveSongs(playlist);
   elements.songCount.textContent = String(songs.length);
+  elements.songCount.setAttribute('aria-label', `${songs.length} track${songs.length === 1 ? '' : 's'}`);
   elements.noSongs.hidden = songs.length !== 0;
   elements.songList.hidden = songs.length === 0;
   const ownSongIndexes = new Map((playlist.songs || []).map((song, index) => [song.line, index]));
@@ -1526,25 +1597,29 @@ function renderSearchView(query) {
 
 function render() {
   updateSpotifyDestinationChoices();
+  youtubeUI.updateDestinations();
   renderTree();
   renderIssues();
 
   const query = libraryQuery.trim();
   const isSearchingLibrary = query.length > 0;
   const isSettings = currentSection === 'settings';
+  const isExport = currentSection === 'youtube-export';
   const playlist = library.playlists.find((item) => item.id === selectedId);
-  const isHome = !isSettings && !isSearchingLibrary && !playlist && library.playlists.length > 0;
+  const isHome = !isExport && !isSettings && !isSearchingLibrary && !playlist && library.playlists.length > 0;
   elements.librarySearchView.hidden = !isSearchingLibrary;
   elements.homeView.hidden = isSettings || !isHome;
   elements.settingsView.hidden = !isSettings;
-  elements.emptyState.hidden = isSettings || isSearchingLibrary || library.playlists.length > 0;
-  elements.playlistView.hidden = isSettings || isSearchingLibrary || !playlist;
+  document.getElementById('youtubeExportView').hidden = !isExport;
+  elements.emptyState.hidden = isExport || isSettings || isSearchingLibrary || library.playlists.length > 0;
+  elements.playlistView.hidden = isExport || isSettings || isSearchingLibrary || !playlist;
   elements.homeButton.classList.toggle('is-active', isHome);
   elements.settingsButton.classList.toggle('is-active', isSettings);
   if (isHome) elements.homeButton.setAttribute('aria-current', 'page');
   else elements.homeButton.removeAttribute('aria-current');
   if (isSettings) elements.settingsButton.setAttribute('aria-current', 'page');
   else elements.settingsButton.removeAttribute('aria-current');
+  if (isExport) { youtubeUI.renderExport(exportViewId); return; }
   if (isSettings) return;
   if (isSearchingLibrary) {
     renderSearchView(query);
@@ -1751,6 +1826,7 @@ elements.githubPushButton.addEventListener('click', () => syncGitHub('push'));
 elements.resolveWithGitHubButton.addEventListener('click', () => resolveGitHubConflicts('pull'));
 elements.resolveWithLocalButton.addEventListener('click', () => resolveGitHubConflicts('push'));
 elements.playlistEditButton.addEventListener('click', openEditPlaylistDialog);
+elements.playlistSyncButton.addEventListener('click', syncCurrentPlaylist);
 window.addEventListener('popstate', (event) => {
   const state = event.state;
   if (!state?.playlistaNavigation || !state.view || !Number.isInteger(state.index)) return;
@@ -1780,11 +1856,28 @@ elements.clearLibrarySearch.addEventListener('click', () => {
   elements.librarySearchInput.focus();
 });
 document.addEventListener('keydown', (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+  if (!event.altKey && !event.isComposing && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault();
     elements.librarySearchInput.focus();
     elements.librarySearchInput.select();
+    return;
   }
+  const target = event.target instanceof Element ? event.target : document.activeElement;
+  const editing = target?.isContentEditable || Boolean(target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]'));
+  const interactive = Boolean(target?.closest('button, a[href], summary, [role="button"]'));
+  if (!PlaylistUI.shouldFocusQuickAdd(event, {
+    playlistVisible: !elements.playlistView.hidden && Boolean(selectedId),
+    modalOpen: Boolean(document.querySelector('dialog[open], [aria-modal="true"]')),
+    editing, interactive,
+  })) return;
+  const input = elements.quickAddEditor.querySelector(`[data-property="${activeComposerProperty}"]`);
+  if (!input) return;
+  event.preventDefault();
+  input.focus({ preventScroll: true });
+  input.setRangeText(event.key, input.selectionStart ?? input.value.length, input.selectionEnd ?? input.value.length, 'end');
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  const bounds = elements.quickAddEditor.getBoundingClientRect();
+  if (bounds.top < 0 || bounds.bottom > window.innerHeight) elements.quickAddEditor.scrollIntoView({ block: 'nearest' });
 });
 
 document.querySelector('#newPlaylistButton').addEventListener('click', openPlaylistDialog);

@@ -195,3 +195,34 @@ test('change counts include edits, removals and reordering while collapsing time
   assert.equal(countChanges(before, playlist('Punk', ['One > Song'])), 1);
   assert.equal(countChanges(before, before.replace('updated: 2026-10-26T10:00', 'updated: 2026-10-26T11:00')), 1);
 });
+
+test('a playlist can sync in both directions with auto-sync off without saving unrelated playlists', async () => {
+  const app = setup({ localFiles: { 'punk.lista': playlist('Punk'), 'rap.lista': playlist('Rap') } });
+  await app.service.sync('both', 'punk.lista');
+  assert.deepEqual([...app.remote.keys()], ['punk.lista']);
+  assert.equal((await app.service.getStatus()).pendingFiles, 1);
+  app.remote.set('punk.lista', playlist('Punk', ['Green Day > Basket Case']));
+  await app.service.sync('both', 'punk.lista');
+  assert.equal(app.local.get('punk.lista'), app.remote.get('punk.lista'));
+  assert.equal(app.remote.has('rap.lista'), false);
+});
+
+test('saving a new child playlist includes its missing parent but leaves unrelated playlists alone', async () => {
+  const child = playlist('90s').replace('playlist: 90s\n', 'playlist: 90s\nparent: Punk\n');
+  const app = setup({ localFiles: { 'punk.lista': playlist('Punk'), '90s.lista': child, 'rap.lista': playlist('Rap') } });
+  await app.service.sync('both', '90s.lista');
+  assert.equal(app.remote.size, 2);
+  assert.equal(app.remote.get('90s.lista'), child);
+  assert.equal(app.remote.get('punk.lista'), app.local.get('punk.lista'));
+});
+
+test('a scoped sync cannot leave remote child playlists with a missing parent after a rename', async () => {
+  const child = playlist('90s').replace('playlist: 90s\n', 'playlist: 90s\nparent: Punk\n');
+  const app = setup({ localFiles: { 'punk.lista': playlist('Punk'), '90s.lista': child } });
+  await app.service.sync('push');
+  const writes = app.writes.length;
+  app.local.set('punk.lista', playlist('New Punk'));
+  app.local.set('90s.lista', child.replace('parent: Punk', 'parent: New Punk'));
+  await assert.rejects(app.service.sync('both', 'punk.lista'), /related playlist changes together from Settings/);
+  assert.equal(app.writes.length, writes);
+});

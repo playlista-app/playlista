@@ -21,14 +21,19 @@ const appSettings = require('./app-settings');
 const github = require('./github');
 const { createSyncManager } = require('./sync-manager');
 const spotify = require('./spotify');
+const { createYouTubeService } = require('./youtube');
 
 const ROOT = path.resolve(__dirname, '..');
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const MAX_BODY_BYTES = 64 * 1024;
+const DEFAULT_PORT = 43817;
 
 const STATIC_FILES = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/playlist-ui.js', ['playlist-ui.js', 'text/javascript; charset=utf-8']],
+  ['/youtube-ui.js', ['youtube-ui.js', 'text/javascript; charset=utf-8']],
+  ['/youtube-export-ui.js', ['youtube-export-ui.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']],
   ['/favicon.svg', ['favicon.svg', 'image/svg+xml']],
 ]);
@@ -69,7 +74,7 @@ function sendSpotifyCallback(response, success, message) {
   response.end(content);
 }
 
-async function readJson(request) {
+async function readJson(request, maximum = MAX_BODY_BYTES) {
   const contentType = request.headers['content-type'] || '';
   if (!contentType.toLowerCase().includes('application/json')) {
     throw new StoreError('Send JSON data.', 415);
@@ -79,7 +84,7 @@ async function readJson(request) {
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > MAX_BODY_BYTES) throw new StoreError('Request is too large.', 413);
+    if (size > maximum) throw new StoreError('Request is too large.', 413);
     chunks.push(chunk);
   }
   try {
@@ -107,7 +112,7 @@ async function serveStatic(requestPath, response) {
   response.end(content);
 }
 
-function createServer(syncManager) {
+function createServer(syncManager, youtube) {
   const server = http.createServer(async (request, response) => {
   if (!isLocalHost(request.headers.host)) {
     response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
@@ -116,11 +121,16 @@ function createServer(syncManager) {
   }
 
   const url = new URL(request.url, 'http://localhost');
+  if (request.method === 'POST' && request.headers.origin && request.headers.origin !== `http://${request.headers.host}`) {
+    sendJson(response, 403, { error: 'Local app requests only.' });
+    return;
+  }
   response.once('finish', () => {
     if (request.method !== 'POST' || response.statusCode >= 400) return;
     if (url.pathname === '/api/settings' || url.pathname === '/api/github/account') syncManager.reconfigure();
     else if (/^\/api\/(songs|playlists)(\/|$)/.test(url.pathname)
-      || url.pathname === '/api/tags/update' || url.pathname === '/api/spotify/import') syncManager.notifyLocalChange();
+      || url.pathname === '/api/tags/update' || url.pathname === '/api/spotify/import'
+      || url.pathname === '/api/youtube/import') syncManager.notifyLocalChange();
   });
   try {
     if (request.method === 'GET' && url.pathname === '/api/health') {
@@ -143,6 +153,35 @@ function createServer(syncManager) {
     }
     if (request.method === 'GET' && url.pathname === '/api/spotify/status') {
       sendJson(response, 200, spotify.getStatus());
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/api/youtube/status') {
+      sendJson(response, 200, await youtube.status());
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/api/youtube/playlists') {
+      sendJson(response, 200, { playlists: await youtube.playlists() });
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/api/youtube/export') {
+      sendJson(response, 200, youtube.getExport(url.searchParams.get('id'), { summary: url.searchParams.get('summary') === 'true' }));
+      return;
+    }
+    if (request.method === 'POST' && url.pathname.startsWith('/api/youtube/')) {
+      const input = await readJson(request, url.pathname === '/api/youtube/export' ? 256 * 1024 : MAX_BODY_BYTES);
+      const actions = {
+        '/api/youtube/connect': () => youtube.previewConnection(input),
+        '/api/youtube/accept': () => youtube.acceptConnection(input),
+        '/api/youtube/disconnect': () => youtube.disconnect(),
+        '/api/youtube/export/prepare': () => youtube.prepareExport(input),
+        '/api/youtube/export/search': () => youtube.searchRow(input),
+        '/api/youtube/export/cancel': () => youtube.cancelExport(input.id),
+        '/api/youtube/export': () => youtube.exportPlaylist(input),
+        '/api/youtube/import': async () => ({ ...await youtube.importPlaylist(input), library: await getLibrary(), tags: await getTagMetadata() }),
+      };
+      const action = actions[url.pathname];
+      if (!action) throw new StoreError('Unknown YouTube Music operation.', 404);
+      sendJson(response, url.pathname === '/api/youtube/import' ? 201 : 200, await action());
       return;
     }
     if (request.method === 'POST' && url.pathname === '/api/spotify/connect') {
@@ -191,7 +230,7 @@ function createServer(syncManager) {
     }
     if (request.method === 'POST' && url.pathname === '/api/github/sync') {
       const input = await readJson(request);
-      const result = await syncManager.sync(input.direction);
+      const result = await syncManager.sync(input.direction, input.file);
       sendJson(response, 200, { ...result, library: await getLibrary(), tags: await getTagMetadata(), sync: await syncManager.getStatus() });
       return;
     }
@@ -282,15 +321,16 @@ function createServer(syncManager) {
   return server;
 }
 
-async function startServer({ port = Number.parseInt(process.env.PORT || '3000', 10), host = '127.0.0.1' } = {}) {
+async function startServer({ port = Number.parseInt(process.env.PORT || String(DEFAULT_PORT), 10), host = '127.0.0.1', youtube: suppliedYouTube } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new Error('PORT must be a number between 1 and 65535.');
   }
   await appSettings.initialize({ setPlaylistsDirectory, getPlaylistsDirectory });
   await getLibrary();
   const syncManager = createSyncManager();
-  const server = createServer(syncManager);
-  server.once('close', () => syncManager.stop());
+  const youtube = suppliedYouTube || createYouTubeService();
+  const server = createServer(syncManager, youtube);
+  server.once('close', () => { syncManager.stop(); youtube.close(); });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(port, host, resolve);
@@ -300,9 +340,15 @@ async function startServer({ port = Number.parseInt(process.env.PORT || '3000', 
 }
 
 if (require.main === module) {
-  const port = Number.parseInt(process.env.PORT || '3000', 10);
+  const port = Number.parseInt(process.env.PORT || String(DEFAULT_PORT), 10);
   startServer({ port })
-    .then(({ address }) => {
+    .then(({ address, server }) => {
+      const shutdown = () => {
+        server.closeAllConnections?.();
+        server.close();
+      };
+      process.once('SIGINT', shutdown);
+      process.once('SIGTERM', shutdown);
       const actualPort = typeof address === 'object' ? address.port : port;
       console.log(`Playlista is running at http://127.0.0.1:${actualPort}`);
       console.log(`Playlist files are stored in ${getPlaylistsDirectory()}`);

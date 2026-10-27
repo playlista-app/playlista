@@ -7,6 +7,9 @@
     <title>Playlista</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/style.css">
+    <script src="/playlist-ui.js" defer></script>
+    <script src="/youtube-ui.js" defer></script>
+    <script src="/youtube-export-ui.js" defer></script>
     <script src="/app.js" defer></script>
   </head>
   <body>
@@ -135,13 +138,44 @@
                   <button id="resolveWithLocalButton" class="button button-small button-soft" type="button">Use local versions</button>
                 </div>
               </section>
+              <section class="settings-card youtube-settings-card">
+                <div class="settings-card-heading"><div><p class="eyebrow">IMPORT &amp; EXPORT</p><h2>YouTube Music</h2></div></div>
+                <p id="youtubeRuntimeStatus" class="settings-path-note" role="status"></p>
+                <div class="github-auth-row">
+                  <span id="youtubeAccountStatus" role="status">Not connected</span>
+                  <button id="youtubeDisconnectButton" type="button" class="button button-small button-soft" hidden>Disconnect</button>
+                </div>
+                <details id="youtubeConnectionDetails">
+                  <summary>Connect a YouTube Music account</summary>
+                  <p class="settings-path-note">Sign in at <a href="https://music.youtube.com" target="_blank" rel="noopener noreferrer">YouTube Music</a> with the account you want to use. Open developer tools → Network, click Library, and select a successful <code>/browse</code> request. Copy its request headers, including Cookie and Authorization. You can paste raw headers, Chrome’s “Copy as fetch (Node.js)”, or <code>browser.json</code> JSON below.</p>
+                  <p class="settings-path-note">These headers grant access to your account. They stay on this computer. No Google developer app is required. <a href="https://ytmusicapi.readthedocs.io/en/stable/setup/browser.html" target="_blank" rel="noopener noreferrer">Connection guide</a></p>
+                  <label class="field"><span>Request headers</span><textarea id="youtubeHeadersInput" rows="4" autocomplete="off" spellcheck="false" placeholder="Paste request headers or browser.json JSON"></textarea></label>
+                  <div class="settings-sync-actions"><button id="youtubeCheckButton" class="button button-soft" type="button">Check account</button></div>
+                  <div id="youtubeAccountPreview" class="youtube-account-preview" hidden>
+                    <strong id="youtubePreviewName"></strong>
+                    <label class="settings-toggle" id="youtubeRememberLabel"><input id="youtubeRememberInput" type="checkbox" checked><span>Remember on this computer (Windows encrypted)</span></label>
+                    <button id="youtubeAcceptButton" type="button" class="button button-small button-primary">Use this account</button>
+                  </div>
+                </details>
+                <div id="youtubeImportControls" hidden>
+                  <div class="settings-sync-actions spotify-import-actions">
+                    <button id="youtubeLoadButton" class="button button-soft" type="button">Load playlists</button>
+                    <label class="spotify-destination"><span>Import into</span><select id="youtubeTargetSelect"><option value="">New playlist</option></select></label>
+                  </div>
+                  <label class="field spotify-name-field"><span>New playlist name <span class="optional">optional</span></span><input id="youtubeNewNameInput" autocomplete="off" placeholder="Uses the YouTube Music playlist name"></label>
+                  <div class="youtube-direct-import"><label class="field"><span>Playlist URL or ID</span><input id="youtubeUrlInput" autocomplete="off" placeholder="https://music.youtube.com/playlist?list=…"></label><button id="youtubeImportUrlButton" type="button" class="button button-soft">Import</button></div>
+                  <label class="field spotify-search-field" id="youtubeFilterField" hidden><span>Find a playlist</span><input id="youtubeFilterInput" type="search" autocomplete="off" placeholder="Filter your YouTube Music playlists"></label>
+                  <div id="youtubePlaylistList" class="spotify-playlist-list" aria-live="polite"></div>
+                </div>
+                <p id="youtubeResult" class="sync-result" role="status" aria-live="polite" hidden></p>
+              </section>
               <section class="settings-card spotify-settings-card">
                 <div class="settings-card-heading"><div><p class="eyebrow">MUSIC IMPORT</p><h2>Spotify</h2></div></div>
                 <label class="field field-wide">
                   <span>Spotify Client ID</span>
                   <input id="spotifyClientIdInput" name="spotifyClientId" autocomplete="off" spellcheck="false" placeholder="From your Spotify developer app">
                 </label>
-                <p class="settings-path-note">Create an app in the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Spotify Developer Dashboard</a> and add this redirect URI to its settings: <code id="spotifyRedirectUri">http://127.0.0.1:3000/spotify/callback</code>. Spotify Development Mode requires Premium on the app owner’s account. Playlista reads playlist data and does not edit Spotify.</p>
+                <p class="settings-path-note">Create an app in the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Spotify Developer Dashboard</a> and add this redirect URI to its settings: <code id="spotifyRedirectUri">http://127.0.0.1:43817/spotify/callback</code>. Spotify Development Mode requires Premium on the app owner’s account. Playlista reads playlist data and does not edit Spotify.</p>
                 <div class="github-auth-row">
                   <span id="spotifyAuthStatus" role="status">Not connected</span>
                   <button id="spotifyConnectButton" class="button button-small button-primary" type="button">Connect Spotify</button>
@@ -166,6 +200,22 @@
             </form>
           </section>
 
+          <section id="youtubeExportView" class="youtube-export-view" aria-labelledby="youtubeExportHeading" hidden>
+            <header class="home-heading"><p class="eyebrow">YOUTUBE MUSIC EXPORT</p><h1 id="youtubeExportHeading">Export</h1></header>
+            <p id="youtubeExportProgress" class="playlist-description" role="status" aria-live="polite"></p>
+            <div id="youtubeExportStats" class="overview-stats"></div>
+            <p id="youtubeExportError" class="form-error" role="alert" hidden></p>
+            <div id="youtubeExportResult" class="sync-result" role="status" hidden></div>
+            <div class="youtube-export-toolbar">
+              <label class="spotify-destination"><span>Show</span><select id="youtubeExportFilter"><option value="all">All songs</option><option value="matched">Matched</option><option value="skipped">Skipped / not found</option></select></label>
+              <button id="youtubeExportCancel" type="button" class="button button-quiet">Cancel export</button>
+            </div>
+            <div id="youtubeExportRows" class="youtube-export-rows"></div>
+            <div id="youtubeExportPagination" class="youtube-export-pagination" hidden>
+              <button id="youtubeExportPrevious" type="button" class="button button-small button-soft">Previous</button><span id="youtubeExportPage" role="status"></span><button id="youtubeExportNext" type="button" class="button button-small button-soft">Next</button>
+            </div>
+          </section>
+
           <section id="emptyState" class="empty-state" hidden>
             <div class="empty-glyph" aria-hidden="true">♫</div>
             <p class="eyebrow">A library that belongs to you</p>
@@ -179,11 +229,15 @@
               <div class="playlist-title-row">
                 <div>
                   <p class="eyebrow" id="playlistFileLabel"></p>
-                  <h1 id="playlistName"></h1>
+                  <div class="playlist-name-row"><h1 id="playlistName"></h1><span id="songCount" class="count-pill playlist-track-count">0</span></div>
                 </div>
-                <button id="playlistEditButton" class="button button-small button-soft" type="button" aria-label="Edit playlist">
-                  <span aria-hidden="true">&#9998;</span> Edit
-                </button>
+                <div class="playlist-header-actions">
+                  <button id="youtubeExportButton" class="button button-small button-soft" type="button">Export to YouTube Music</button>
+                  <button id="playlistSyncButton" class="button button-small button-primary" type="button" hidden>Sync</button>
+                  <button id="playlistEditButton" class="button button-small button-soft" type="button" aria-label="Edit playlist">
+                    <span aria-hidden="true">&#9998;</span> Edit
+                  </button>
+                </div>
               </div>
               <p id="playlistDescription" class="playlist-description" hidden></p>
               <div id="playlistMeta" class="metadata-row"></div>
@@ -192,8 +246,7 @@
             <section class="song-composer" aria-labelledby="addSongHeading">
               <div class="composer-heading">
                 <div>
-                  <p class="eyebrow">QUICK ADD</p>
-                  <h2 id="addSongHeading">Add a song</h2>
+                  <h2 id="addSongHeading">Quick add</h2>
                 </div>
               </div>
               <form id="quickAddForm" novalidate>
@@ -201,7 +254,6 @@
                   <div id="quickAddEditor" class="quick-add-editor" role="group" aria-label="Song properties"></div>
                   <button id="quickAddButton" class="quick-add-submit" type="submit" aria-label="Add song" title="Add song"><span aria-hidden="true">&#8629;</span></button>
                 </div>
-                <p class="composer-hint">Type the song first. Tab cycles through Song, Artist, and Tags; Shift+Tab goes back. A comma commits a tag.</p>
                 <p id="quickAddError" class="form-error" role="alert" hidden></p>
               </form>
             </section>
@@ -209,8 +261,7 @@
             <section class="songs-section" aria-labelledby="songsHeading">
               <div class="section-title-row">
                 <div>
-                  <p class="eyebrow">PLAYLIST TRACKS</p>
-                  <h2 id="songsHeading">Songs <span id="songCount" class="count-pill">0</span></h2>
+                  <h2 id="songsHeading" class="eyebrow playlist-tracks-heading">Playlist tracks</h2>
                 </div>
               </div>
               <ol id="songList" class="song-list"></ol>
