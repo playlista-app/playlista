@@ -26,6 +26,8 @@
     "site:capture": "node scripts/capture-site-demo.js",
     "site:check": "node scripts/check-site.js",
     "site:publish": "node scripts/publish-site.js",
+    "site:build": "node scripts/build-site.js",
+    "site:setup": "node scripts/setup-site-deploy.js",
     "setup:youtube": "node scripts/setup-integration.js youtube",
     "setup:spotify": "node scripts/setup-integration.js spotify",
     "lint:playlists": "node src/cli.js",

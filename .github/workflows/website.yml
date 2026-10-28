@@ -1,0 +1,74 @@
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - 'scripts/build-site.js'
+      - 'scripts/publish-site.js'
+      - 'scripts/github-api.js'
+      - '.github/workflows/website.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Validate the website
+        run: node --test test/website.test.js test/publishing.test.js
+      - name: Prepare website and latest app downloads
+        run: npm run site:build
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Check deployment credentials
+        env:
+          DEPLOY_KEY: ${{ secrets.WEBSITE_DEPLOY_KEY }}
+        run: |
+          if [ -z "$DEPLOY_KEY" ]; then
+            echo '::error::Run npm run site:setup once to configure the website deployment key.'
+            exit 1
+          fi
+      - name: Check out the Pages repository
+        uses: actions/checkout@v7
+        with:
+          repository: playlista-app/playlista-app.github.io
+          ref: main
+          path: build/pages-checkout
+          ssh-key: ${{ secrets.WEBSITE_DEPLOY_KEY }}
+      - name: Publish changed website files
+        env:
+          SOURCE_REPOSITORY: ${{ github.repository }}
+        run: |
+          test "$(node -p 'require("./build/pages-checkout/.playlista-site.json").generator')" = 'playlista/website'
+          rsync --archive --delete --exclude='.git/' build/website/ build/pages-checkout/
+          cd build/pages-checkout
+          if [ -z "$(git status --porcelain)" ]; then
+            echo 'Website is already current.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m "Deploy website from ${SOURCE_REPOSITORY}"
+          git push origin HEAD:main

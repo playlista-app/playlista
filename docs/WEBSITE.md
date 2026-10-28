@@ -21,7 +21,28 @@ Capture uses a temporary playlist directory and mocked connection statuses. It n
 
 ## Publish the site
 
-Use your authenticated GitHub CLI account with access to the organization:
+Push changes under `website/` to **main** in the app repository. The **Website** GitHub Actions workflow validates and builds the site, updates the Pages repository, and GitHub Pages deploys it automatically. Publishing an app release refreshes the static download snapshot too. App-only changes do not redeploy the website.
+
+The workflow also runs when its deployment/build scripts change. Use **Actions → Website → Run workflow** on main to redeploy manually. Deployments are serialized, and unchanged output is skipped. It always publishes from main, including when triggered by a release tag.
+
+The cross-repository push uses an SSH deploy key that can write only to `playlista-app/playlista-app.github.io`. Its private key is stored in the app repository's `WEBSITE_DEPLOY_KEY` Actions secret. The workflow's built-in GitHub token has read-only access; no personal access token is stored in Actions.
+
+Maintainers can configure that key once, or recover it if it is removed, with an authenticated GitHub CLI account that administers both repositories:
+
+```sh
+npm run site:setup -- --dry-run
+npm run site:setup
+```
+
+The setup command generates the key in a temporary directory, uploads the public key to the Pages repository, stores the private key directly in the Actions secret, and removes the temporary files. It does not replace an existing working configuration.
+
+GitHub disables deploy keys by default for new organizations. If setup reports **Deploy keys are disabled for this repository**, an organization owner must enable them under **Organization Settings → Member privileges → Deploy keys**. This is an organization policy, so the setup script does not change it automatically. See [GitHub's deploy-key policy documentation](https://docs.github.com/en/enterprise-cloud@latest/organizations/managing-organization-settings/restricting-deploy-keys-in-your-organization).
+
+The maintainer's local GitHub CLI login also needs the `workflow` permission to push new workflow files. If GitHub rejects the workflow push, use `gh auth refresh -h github.com -s workflow`, authorize the permission update, and retry the push. This permission is for installing/updating workflows; it is not a personal token stored in Actions.
+
+Local previews and builds use `npm run site:preview` and `npm run site:build`. The latter writes generated files to ignored `build/website/`. The same preparation code is used for automatic and manual deployment.
+
+For a manual deployment from your computer, your authenticated GitHub CLI account can still run:
 
 ```sh
 npm run site:publish -- --dry-run
@@ -30,7 +51,7 @@ npm run site:publish
 
 On its first run, the publisher creates the public organization site repository, uploads only the files under `website/`, and enables GitHub Pages from the root of its default branch. Subsequent runs update managed files in a single commit and preserve other repository files. A marker prevents overwriting an unrelated existing repository. Neither app source, release binaries, nor your library/settings are copied. The monorepo's working tree is not committed or pushed by this command.
 
-GitHub's native Pages build handles deployment, so no cross-repository deployment token is stored in Actions. Updates use the local `gh` login. Check deployment progress in the public repository's Pages/Actions UI. GitHub Pages may take several minutes to update after publication.
+The workflow pushes over SSH using the repository-limited deploy key, which triggers GitHub's native Pages build. Check the **Website** workflow in the app repository and the **pages build and deployment** workflow in the Pages repository. GitHub Pages may take several minutes to update after publication.
 
 ## Publish downloads
 

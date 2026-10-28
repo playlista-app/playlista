@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { downloadableAssets, findRelease } = require('../scripts/publish-downloads');
-const { siteFiles } = require('../scripts/publish-site');
+const { siteFiles, prepareSiteFiles } = require('../scripts/publish-site');
 
 const release = () => ({ tag_name: 'v1.2.3', draft: true, assets: ['windows-x64-setup.exe', 'windows-x64-portable.exe', 'mac-arm64.dmg', 'mac-x64.dmg', 'linux-x86_64.AppImage', 'linux-x64.tar.gz'].map((suffix) => ({ name: `Playlista-1.2.3-${suffix}`, size: 100, state: 'uploaded' })).concat([{ name: 'SHA256SUMS.txt', size: 100 }]) });
 
@@ -30,4 +30,16 @@ test('public site publishing contains only dedicated website files and sample as
   assert.ok(files.some((item) => item.path === 'assets/playlist.webp'));
   assert.ok(files.some((item) => item.path === 'assets/library.webp'));
   assert.equal(files.some((item) => /(^|\/)(playlists|data|\.git|\.venv|src)(\/|$)/.test(item.path)), false);
+});
+
+test('automatic and manual deployments prepare the same managed site and preserve a release snapshot offline', async () => {
+  const files = await prepareSiteFiles({ refreshRelease: false });
+  const marker = JSON.parse(files.find((item) => item.path === '.playlista-site.json').content.toString('utf8'));
+  assert.equal(marker.generator, 'playlista/website');
+  assert.ok(marker.files.includes('assets/playlist.webp'));
+  assert.ok(marker.files.includes('releases.json'));
+  assert.ok(marker.files.includes('README.md'));
+  assert.equal(new Set(files.map((item) => item.path)).size, files.length);
+  assert.ok(JSON.parse(files.find((item) => item.path === 'releases.json').content.toString('utf8')).assets.length > 0);
+  assert.equal(files.some((item) => item.path.startsWith('data/')), false);
 });

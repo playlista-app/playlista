@@ -22,11 +22,25 @@ async function siteFiles(directory = source, prefix = '') {
   return result;
 }
 
-async function publish({ dryRun = false } = {}) {
+async function prepareSiteFiles({ refreshRelease = true } = {}) {
   const files = await siteFiles();
   for (const required of ['index.html', 'style.css', 'downloads.js', 'assets/playlist.webp', 'assets/library.webp']) {
     if (!files.some((file) => file.path === required)) throw new Error(`Missing website file: ${required}`);
   }
+  if (refreshRelease) {
+    try {
+      const latest = api('GET', `repos/${releaseRepository}/releases/latest`);
+      const snapshot = { tag_name: latest.tag_name, assets: latest.assets.map(({ name, browser_download_url, size, state }) => ({ name, browser_download_url, size, state })) };
+      files.find((file) => file.path === 'releases.json').content = Buffer.from(JSON.stringify(snapshot) + '\n');
+    } catch (error) { if (!isNotFound(error)) throw error; }
+  }
+  files.push({ path: 'README.md', content: Buffer.from('# Playlista website\n\nVisit **https://playlista-app.github.io/** for the app overview.\n\nApplication source and desktop downloads: **https://github.com/playlista-app/playlista**.\n\nThis repository hosts the website only. Edit `website/` in the app repository; the Website workflow deploys changes from main automatically. `npm run site:publish` remains available for manual deployment.\n') });
+  files.push({ path: '.playlista-site.json', content: Buffer.from(JSON.stringify({ generator: 'playlista/website', files: files.map((file) => file.path) }, null, 2) + '\n') });
+  return files;
+}
+
+async function publish({ dryRun = false } = {}) {
+  const files = await prepareSiteFiles({ refreshRelease: !dryRun });
   if (dryRun) { console.log(`Would publish ${files.length} website files to ${repository}. No repository or Pages settings changed.`); return; }
   let repo;
   let created = false;
@@ -37,11 +51,6 @@ async function publish({ dryRun = false } = {}) {
     created = true;
   }
   if (repo.private) throw new Error('The Pages repository must be public. Its visibility was not changed.');
-  try {
-    const latest = api('GET', `repos/${releaseRepository}/releases/latest`);
-    const snapshot = { tag_name: latest.tag_name, assets: latest.assets.map(({ name, browser_download_url, size, state }) => ({ name, browser_download_url, size, state })) };
-    files.find((file) => file.path === 'releases.json').content = Buffer.from(JSON.stringify(snapshot) + '\n');
-  } catch (error) { if (!isNotFound(error)) throw error; }
   const branch = repo.default_branch;
   let previous;
   try {
@@ -49,9 +58,7 @@ async function publish({ dryRun = false } = {}) {
     previous = JSON.parse(Buffer.from(marker.content, 'base64').toString('utf8'));
   } catch (error) { if (!isNotFound(error)) throw error; }
   if (!created && previous?.generator !== 'playlista/website') throw new Error('The existing repository is not managed by this publisher. No content was changed.');
-  files.push({ path: 'README.md', content: Buffer.from('# Playlista website\n\nVisit **https://playlista-app.github.io/** for the app overview.\n\nApplication source and desktop downloads: **https://github.com/playlista-app/playlista**.\n\nThis repository hosts the website only. Website source is maintained under `website/` in the app repository and deployed with `npm run site:publish`. Generated files should be changed there.\n') });
   const names = files.map((file) => file.path);
-  files.push({ path: '.playlista-site.json', content: Buffer.from(JSON.stringify({ generator: 'playlista/website', files: names }, null, 2) + '\n') });
   const ref = api('GET', `repos/${repository}/git/ref/heads/${encodeURIComponent(branch)}`);
   const commit = api('GET', `repos/${repository}/git/commits/${ref.object.sha}`);
   const tree = [];
@@ -83,4 +90,4 @@ async function publish({ dryRun = false } = {}) {
 }
 
 if (require.main === module) publish({ dryRun: process.argv.includes('--dry-run') }).catch((error) => { console.error(error.stderr?.toString() || error.message); process.exitCode = 1; });
-module.exports = { siteFiles, publish };
+module.exports = { siteFiles, prepareSiteFiles, publish };
