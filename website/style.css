@@ -39,6 +39,8 @@ h1 { max-width: 930px; margin-inline: auto; font-size: clamp(38px, 4.7vw, 60px);
 .button:hover { transform: translateY(-2px); background: #e9eedf; }
 .button.primary { color: var(--paper); background: var(--green); border-color: var(--green); }
 .button.primary:hover { background: #20553e; }
+.hero-actions { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 12px; }
+.button-secondary { background: #fcfcf7; color: var(--ink); border-color: #c3cebf; }
 .availability { font-size: 10px; color: var(--muted); margin-top: 12px; margin-bottom: 0; }
 .preview-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 12px; }
 .sample-label { font-size: 10px; color: var(--muted); }

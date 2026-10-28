@@ -33,8 +33,9 @@ async function check() {
     await until(() => browser.evaluate('document.querySelector("#primaryDownload").href.endsWith("setup.exe") && document.querySelector("#appScreenshot").naturalWidth > 0'));
     assert.equal(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
     assert.equal(await browser.evaluate('document.querySelectorAll(".is-recommended").length'), 1);
-    assert.equal(await browser.evaluate('document.querySelector("#primaryDownload").textContent.includes("for free")'), true);
-    assert.equal(await browser.evaluate('document.querySelector(".nav-download").textContent.includes("for free")'), true);
+    assert.equal(await browser.evaluate('document.querySelector("#primaryDownload").textContent'), 'Download for Windows ↓');
+    assert.equal(await browser.evaluate('document.querySelector(".nav-download").textContent'), 'Download for Windows ↓');
+    assert.equal(await browser.evaluate('document.querySelector("#sourceCodeLink").href'), 'https://github.com/playlista-app/playlista');
     await fs.mkdir(path.join(__dirname, '../build/site'), { recursive: true });
     await fs.writeFile(path.join(__dirname, '../build/site/desktop.png'), Buffer.from((await browser.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
     await browser.evaluate('document.querySelector("#tab-library").click()');
@@ -45,11 +46,12 @@ async function check() {
     assert.equal(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), true, 'mobile layout must not overflow');
     await fs.writeFile(path.join(__dirname, '../build/site/mobile.png'), Buffer.from((await browser.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 700, deviceScaleFactor: 1, mobile: true });
-    assert.equal(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), true, 'free download label fits a narrow phone');
+    assert.equal(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), true, 'download and source buttons fit a narrow phone');
     for (const [platform, expected] of [['MacIntel', '#downloads'], ['Linux x86_64', '.AppImage']]) {
       await browser.send('Network.setUserAgentOverride', { userAgent: 'PlaylistaWebsiteCheck Chrome', platform });
       await browser.send('Page.reload');
       await until(() => browser.evaluate(`document.querySelector('#primaryDownload')?.href.endsWith(${JSON.stringify(expected)}) && document.querySelector('.is-recommended')?.dataset.platform === ${JSON.stringify(platform === 'MacIntel' ? 'mac' : 'linux')}`));
+      assert.equal(await browser.evaluate('document.querySelector("#primaryDownload").textContent'), platform === 'MacIntel' ? 'Download for macOS ↓' : 'Download for Linux ↓');
     }
     apiUnavailable = true;
     await browser.evaluate('sessionStorage.clear()');

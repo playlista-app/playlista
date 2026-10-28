@@ -53,13 +53,20 @@
     const available = Object.keys(assets).length > 0;
     document.querySelector('#releaseStatus').textContent = available ? `Version ${release.tag_name.replace(/^v/, '')}` : 'View downloads on GitHub Releases.';
     const main = document.querySelector('#primaryDownload');
-    main.textContent = 'Get Playlista for free ↓';
+    const platformNames = { windows: 'Windows', linux: 'Linux', mac: 'macOS' };
+    const platformAvailable = platform === 'mac' ? assets['mac-arm64'] || assets['mac-x64'] : assets[platform];
+    const label = platformAvailable ? `Download for ${platformNames[platform]}` : available ? 'Download Playlista' : 'View downloads';
+    main.textContent = `${label} ↓`;
     main.href = platform === 'windows' && assets.windows ? assets.windows
       : platform === 'linux' && assets.linux ? assets.linux
         : available ? '#downloads' : `${releasePage}/latest`;
     const descriptions = { windows: 'Windows · 64-bit installer', linux: 'Linux · 64-bit AppImage', mac: 'macOS · Apple Silicon & Intel' };
-    document.querySelector('#heroAvailability').textContent = available && platform ? descriptions[platform] : 'Windows · macOS · Linux';
-    main.setAttribute('aria-label', available && platform ? `Get Playlista for ${platform === 'mac' ? 'macOS' : platform === 'windows' ? 'Windows' : 'Linux'} for free` : 'Get Playlista for free');
+    document.querySelector('#heroAvailability').textContent = `Free · ${available && platform ? descriptions[platform] : 'Windows · macOS · Linux'}`;
+    main.setAttribute('aria-label', label);
+    const header = document.querySelector('.nav-download');
+    header.textContent = main.textContent;
+    header.href = main.href;
+    header.setAttribute('aria-label', label);
   }
   async function request(url) {
     const controller = new AbortController();
