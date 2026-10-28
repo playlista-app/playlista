@@ -30,8 +30,7 @@ h1, h2, h3, p { margin-top: 0; }
 .nav-download { border: 1px solid #c3cebf; padding: 10px 16px; border-radius: 7px; font-size: 12px; font-weight: 650; display: flex; gap: 20px; }
 .nav-download:hover { background: #edf0e6; }
 .hero { text-align: center; padding-block: 58px 36px; }
-h1 { font-size: clamp(44px, 6vw, 76px); line-height: 1.07; font-weight: 650; letter-spacing: -.055em; margin-bottom: 22px; }
-h1 em { color: var(--green); font-family: Georgia, "Times New Roman", serif; font-weight: 400; }
+h1 { max-width: 930px; margin-inline: auto; font-size: clamp(38px, 4.7vw, 60px); line-height: 1.14; font-weight: 600; letter-spacing: -.04em; margin-bottom: 22px; }
 .hero-description { max-width: 580px; color: var(--muted); font-size: 15px; line-height: 1.8; margin: 0 auto 22px; }
 .feature-list { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px 21px; list-style: none; padding: 0; margin: 0 0 27px; color: #4e6955; font-size: 11px; }
 .feature-list li { display: inline-flex; align-items: center; gap: 7px; }
@@ -89,7 +88,7 @@ h1 em { color: var(--green); font-family: Georgia, "Times New Roman", serif; fon
   .nav-download { font-size: 11px; padding: 9px 12px; gap: 12px; }
   .brand { font-size: 21px; }
   .hero { padding-block: 39px 28px; }
-  h1 { font-size: clamp(39px, 7.5vw, 57px); margin-bottom: 20px; }
+  h1 { font-size: clamp(32px, 5.8vw, 44px); margin-bottom: 20px; }
   .hero-description { font-size: 13px; max-width: 470px; margin-bottom: 18px; }
   .feature-list { max-width: 390px; margin-inline: auto; font-size: 10px; gap: 10px 18px; margin-bottom: 23px; }
   .app-frame { border-radius: 8px; }
