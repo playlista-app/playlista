@@ -1,6 +1,6 @@
 const previews = {
-  playlist: { alt: 'Playlista showing a sample Skatepark Anthems playlist, its tags, inline quick add, and the playlist hierarchy in the sidebar.', caption: 'Quick add, drag to reorder, and tag the songs that belong together.' },
-  library: { alt: 'Playlista library overview with sample playlists, track counts, and shared tags.', caption: 'See your whole collection, follow playlist families, and find songs by their tags.' },
+  playlist: { alt: 'Playlista showing a sample Skatepark Anthems playlist, its tags, inline quick add, and the playlist hierarchy in the sidebar.', caption: 'Quick add · drag and drop · song tags' },
+  library: { alt: 'Playlista library overview with sample playlists, track counts, and shared tags.', caption: 'Playlist families · shared tags · library search' },
 };
 const tabs = [...document.querySelectorAll('[data-preview]')];
 function showPreview(tab) {
