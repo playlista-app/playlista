@@ -15,6 +15,7 @@ async function check() {
   }) };
   let empty = false;
   let apiUnavailable = false;
+  let apiEmpty = false;
   try {
     browser = await launchBrowser();
     browser.on((message) => {
@@ -22,7 +23,7 @@ async function check() {
       if (message.method === 'Fetch.requestPaused') {
         const isApi = message.params.request.url.startsWith('https://api.github.com/');
         browser.send('Fetch.fulfillRequest', { requestId: message.params.requestId, responseCode: isApi && (empty || apiUnavailable) ? 404 : 200,
-          responseHeaders: [{ name: 'content-type', value: 'application/json' }, { name: 'access-control-allow-origin', value: '*' }], body: Buffer.from(JSON.stringify(empty ? { tag_name: null, assets: [] } : release)).toString('base64') }).catch((error) => errors.push(error.message));
+          responseHeaders: [{ name: 'content-type', value: 'application/json' }, { name: 'access-control-allow-origin', value: '*' }], body: Buffer.from(JSON.stringify(empty || (isApi && apiEmpty) ? { tag_name: null, assets: [] } : release)).toString('base64') }).catch((error) => errors.push(error.message));
       }
     });
     await browser.send('Fetch.enable', { patterns: [{ urlPattern: 'https://api.github.com/repos/*/releases/latest' }, { urlPattern: `${preview.url}/releases.json` }] });
@@ -54,6 +55,13 @@ async function check() {
     await browser.evaluate('sessionStorage.clear()');
     await browser.send('Page.reload');
     await until(() => browser.evaluate('document.querySelector("#primaryDownload")?.href.endsWith("linux-x86_64.AppImage")'));
+    apiUnavailable = false;
+    apiEmpty = true;
+    await browser.evaluate('sessionStorage.clear()');
+    await browser.send('Page.reload');
+    await until(() => browser.evaluate('document.querySelector("#primaryDownload")?.href.endsWith("linux-x86_64.AppImage")'));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(await browser.evaluate('document.querySelector("#primaryDownload").href.endsWith("linux-x86_64.AppImage")'), true, 'an empty API response cannot erase working snapshot downloads');
     empty = true;
     await browser.evaluate('sessionStorage.clear()');
     await browser.send('Page.reload');

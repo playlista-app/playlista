@@ -79,8 +79,8 @@
     try { render(await request('releases.json')); } catch {}
     try {
       const release = await request(`https://api.github.com/repos/${repository}/releases/latest`);
-      render(release);
       if (Object.keys(releaseAssets(release)).length) {
+        render(release);
         try { sessionStorage.setItem(cacheKey, JSON.stringify({ release, fetchedAt: Date.now() })); } catch {}
       }
     } catch { /* Keep the static snapshot if GitHub is offline or rate-limited. */ }
