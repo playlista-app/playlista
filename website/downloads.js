@@ -1,6 +1,6 @@
 (function (root) {
   'use strict';
-  const repository = 'playlista-app/playlista-app.github.io';
+  const repository = 'playlista-app/playlista';
   const releasePage = `https://github.com/${repository}/releases`;
   const patterns = {
     windows: /^Playlista-[\d][\w.+-]*-windows-x64-setup\.exe$/,
@@ -68,14 +68,17 @@
   }
   async function initialize() {
     let cached;
-    try { cached = JSON.parse(sessionStorage.getItem('playlista-public-release')); } catch {}
+    const cacheKey = `playlista-release:${repository}`;
+    try { cached = JSON.parse(sessionStorage.getItem(cacheKey)); } catch {}
     render(cached?.release || null);
     if (cached && Date.now() - cached.fetchedAt < 5 * 60 * 1000) return;
     try { render(await request('releases.json')); } catch {}
     try {
       const release = await request(`https://api.github.com/repos/${repository}/releases/latest`);
       render(release);
-      try { sessionStorage.setItem('playlista-public-release', JSON.stringify({ release, fetchedAt: Date.now() })); } catch {}
+      if (Object.keys(releaseAssets(release)).length) {
+        try { sessionStorage.setItem(cacheKey, JSON.stringify({ release, fetchedAt: Date.now() })); } catch {}
+      }
     } catch { /* Keep the static snapshot if GitHub is offline or rate-limited. */ }
   }
   initialize();

@@ -91,7 +91,7 @@ Use a consistent macOS signature to keep Keychain access stable across updates. 
 
 `npm run dist` invokes `scripts/package-desktop.js`, which removes empty certificate-path variables before starting electron-builder. Missing Actions secrets expand to empty strings; passing `CSC_LINK=""` directly to electron-builder makes its Mac signer interpret the checkout directory as a certificate and fail with “not a file.” Configured certificates and intentionally empty certificate passwords are retained.
 
-For public downloads while the app source stays private, use `npm run release:publish -- v<version>` after every platform completes. See [website and public downloads](WEBSITE.md).
+The app repository is public. Publish the completed draft there from GitHub Releases, or use `npm run release:publish -- v<version>`. The website reads these app releases directly; binaries are not mirrored into the Pages repository. See [website and public downloads](WEBSITE.md).
 
 ## Data and integrations
 

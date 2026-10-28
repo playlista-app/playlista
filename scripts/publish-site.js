@@ -1,6 +1,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { api, isNotFound } = require('./github-api');
+const { repository: releaseRepository } = require('../website/downloads');
 
 const repository = 'playlista-app/playlista-app.github.io';
 const source = path.resolve(__dirname, '../website');
@@ -32,12 +33,12 @@ async function publish({ dryRun = false } = {}) {
   try { repo = api('GET', `repos/${repository}`); }
   catch (error) {
     if (!isNotFound(error)) throw error;
-    repo = api('POST', 'orgs/playlista-app/repos', { name: 'playlista-app.github.io', private: false, auto_init: true, description: 'The Playlista website and public desktop downloads.', homepage: 'https://playlista-app.github.io/', has_issues: true, has_projects: false, has_wiki: false });
+    repo = api('POST', 'orgs/playlista-app/repos', { name: 'playlista-app.github.io', private: false, auto_init: true, description: 'The Playlista website. App source and downloads: github.com/playlista-app/playlista', homepage: 'https://playlista-app.github.io/', has_issues: true, has_projects: false, has_wiki: false });
     created = true;
   }
-  if (repo.private) throw new Error('The Pages/download repository must be public. Its visibility was not changed.');
+  if (repo.private) throw new Error('The Pages repository must be public. Its visibility was not changed.');
   try {
-    const latest = api('GET', `repos/${repository}/releases/latest`);
+    const latest = api('GET', `repos/${releaseRepository}/releases/latest`);
     const snapshot = { tag_name: latest.tag_name, assets: latest.assets.map(({ name, browser_download_url, size, state }) => ({ name, browser_download_url, size, state })) };
     files.find((file) => file.path === 'releases.json').content = Buffer.from(JSON.stringify(snapshot) + '\n');
   } catch (error) { if (!isNotFound(error)) throw error; }
@@ -48,7 +49,7 @@ async function publish({ dryRun = false } = {}) {
     previous = JSON.parse(Buffer.from(marker.content, 'base64').toString('utf8'));
   } catch (error) { if (!isNotFound(error)) throw error; }
   if (!created && previous?.generator !== 'playlista/website') throw new Error('The existing repository is not managed by this publisher. No content was changed.');
-  files.push({ path: 'README.md', content: Buffer.from('# Playlista\n\nYour playlists, yours to keep.\n\nVisit **https://playlista-app.github.io/** for the app overview and desktop downloads.\n\nThis repository hosts the public website and release binaries. Website source is maintained in the application monorepo under `website/` and deployed with `npm run site:publish`. Generated files should be changed there.\n') });
+  files.push({ path: 'README.md', content: Buffer.from('# Playlista website\n\nVisit **https://playlista-app.github.io/** for the app overview.\n\nApplication source and desktop downloads: **https://github.com/playlista-app/playlista**.\n\nThis repository hosts the website only. Website source is maintained under `website/` in the app repository and deployed with `npm run site:publish`. Generated files should be changed there.\n') });
   const names = files.map((file) => file.path);
   files.push({ path: '.playlista-site.json', content: Buffer.from(JSON.stringify({ generator: 'playlista/website', files: names }, null, 2) + '\n') });
   const ref = api('GET', `repos/${repository}/git/ref/heads/${encodeURIComponent(branch)}`);

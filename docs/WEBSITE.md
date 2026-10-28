@@ -1,6 +1,6 @@
 # Website and public downloads
 
-The public landing page lives at **https://playlista-app.github.io/**. GitHub requires an organization site repository to be named `playlista-app.github.io`; naming it just `playlista-app` would produce a project site rather than the root site. The application repository stays private. Website source stays in this monorepo under `website/`; the separate **public** `playlista-app/playlista-app.github.io` repository receives only the static website and release binaries.
+The public landing page lives at **https://playlista-app.github.io/**. GitHub requires an organization site repository to be named `playlista-app.github.io`; naming it just `playlista-app` would produce a project site rather than the root site. Website source stays in this monorepo under `website/`; `playlista-app/playlista-app.github.io` hosts the static site. Application source and desktop releases are in **https://github.com/playlista-app/playlista**.
 
 ## Edit and preview
 
@@ -28,21 +28,21 @@ npm run site:publish -- --dry-run
 npm run site:publish
 ```
 
-On its first run, the publisher creates the public organization site repository, uploads only the files under `website/`, and enables GitHub Pages from the root of its default branch. Subsequent runs update managed files in a single commit and preserve other repository files. A marker prevents overwriting an unrelated existing repository. Neither app source nor your library/settings are copied. The monorepo's working tree is not committed or pushed by this command.
+On its first run, the publisher creates the public organization site repository, uploads only the files under `website/`, and enables GitHub Pages from the root of its default branch. Subsequent runs update managed files in a single commit and preserve other repository files. A marker prevents overwriting an unrelated existing repository. Neither app source, release binaries, nor your library/settings are copied. The monorepo's working tree is not committed or pushed by this command.
 
 GitHub's native Pages build handles deployment, so no cross-repository deployment token is stored in Actions. Updates use the local `gh` login. Check deployment progress in the public repository's Pages/Actions UI. GitHub Pages may take several minutes to update after publication.
 
 ## Publish downloads
 
-The existing `npm run release -- patch` command builds all platforms and stages a draft release in the private app repository. A public website cannot offer anonymous downloads from that private repository. Once the complete draft has all platform assets and `SHA256SUMS.txt`, run:
+`npm run release -- patch` builds all platforms and stages a draft release in the public app repository, **playlista-app/playlista**. Once the build succeeds, publish the draft from that repository's GitHub Releases page. Alternatively:
 
 ```sh
 npm run release:publish -- v1.0.3 --dry-run
 npm run release:publish -- v1.0.3
 ```
 
-Replace the example version with the completed release tag. This command downloads the builds to a temporary folder, verifies every binary against the checksum manifest, creates/updates a **draft** in the public website repository, uploads the assets, and **publishes that public release** only after every upload succeeds. It refuses incomplete builds or overwriting an already published public release. Private application source is not uploaded. Existing released tags should not be moved; release a new version for packaging fixes.
+Replace the example version with the completed release tag. This command checks that every platform build and the checksum manifest are present, then publishes the existing app draft. It does not copy binaries or create a release in the website repository. Existing released tags should not be moved; release a new version for packaging fixes.
 
-The website reads the latest stable published release from the **public website repository**, selecting Windows setup or Linux AppImage for those platforms. Mac visitors choose Apple Silicon or Intel explicitly; user-agent strings do not reliably identify every Mac processor. All supported platform choices remain available. Mobile visitors receive the complete download list rather than an inappropriate native installer.
+The website reads the latest stable published release from **playlista-app/playlista**, selecting Windows setup or Linux AppImage for those platforms. Mac visitors choose Apple Silicon or Intel explicitly; user-agent strings do not reliably identify every Mac processor. All supported platform choices remain available. Mobile visitors receive the complete download list rather than an inappropriate native installer. GitHub and release-note links also point to the app repository.
 
-The browser caches release metadata for five minutes. A static `releases.json` snapshot is refreshed by site publishing and after download publication, so rate-limited/offline GitHub API requests can use the snapshot. With no completed public release, the page says downloads are being prepared and links to the public releases page. It never invents a download URL for an unavailable artifact.
+The browser caches release metadata for five minutes, scoped to the app repository. Empty releases are not cached. A static `releases.json` snapshot is refreshed by site publishing and the optional release-publishing command, so rate-limited/offline GitHub API requests can use the snapshot. With no completed app release, the page says downloads are being prepared and links to the app's releases page. It never invents a download URL for an unavailable artifact.
