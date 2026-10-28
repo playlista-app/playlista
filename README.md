@@ -2,6 +2,8 @@
 
 Playlista keeps playlist definitions as portable `.lista` text files. [SPEC.md](SPEC.md) defines the format. The Node app includes a validator and a local editor with no Node runtime dependencies. The optional Electron desktop app bundles the interface, backend, and music integration helpers. See [desktop builds and releases](docs/RELEASING.md).
 
+The public website is **https://playlista-app.github.io/**. Its source lives in [`website/`](website/), with real sample-library screenshots and platform-aware public release links. See [website publishing](docs/WEBSITE.md).
+
 ## Desktop app
 
 Release builds target Windows x64, macOS Intel and Apple Silicon, and Linux x64. The desktop app starts and stops its own local backend; users do not need Node, Python, or a terminal. GitHub backup is optional and currently requires an installed, authenticated [GitHub CLI](https://cli.github.com/).
