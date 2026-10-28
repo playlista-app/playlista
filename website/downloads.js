@@ -7,8 +7,8 @@
     portable: /^Playlista-[\d][\w.+-]*-windows-x64-portable\.exe$/,
     'mac-arm64': /^Playlista-[\d][\w.+-]*-mac-arm64\.dmg$/,
     'mac-x64': /^Playlista-[\d][\w.+-]*-mac-x64\.dmg$/,
-    linux: /^Playlista-[\d][\w.+-]*-linux-x64\.AppImage$/,
-    'linux-archive': /^Playlista-[\d][\w.+-]*-linux-x64\.tar\.gz$/,
+    linux: /^Playlista-[\d][\w.+-]*-linux-(?:x64|x86_64)\.AppImage$/,
+    'linux-archive': /^Playlista-[\d][\w.+-]*-linux-(?:x64|x86_64)\.tar\.gz$/,
   };
   function detectPlatform({ platform = '', userAgent = '', maxTouchPoints = 0 } = {}) {
     if (/Android|iPhone|iPad|iPod/i.test(userAgent) || (/Mac/i.test(platform) && maxTouchPoints > 1)) return null;
@@ -42,20 +42,24 @@
   }
   function render(release) {
     const assets = releaseAssets(release);
-    const labels = { windows: 'Download installer', portable: 'Portable version', 'mac-arm64': 'Apple Silicon', 'mac-x64': 'Intel Mac', linux: 'Download AppImage', 'linux-archive': 'Download .tar.gz' };
+    const labels = { windows: 'Download installer (.exe)', portable: 'Portable version (.exe)', 'mac-arm64': 'Apple Silicon (.dmg)', 'mac-x64': 'Intel Mac (.dmg)', linux: 'Download AppImage', 'linux-archive': 'Download .tar.gz' };
     for (const link of document.querySelectorAll('[data-asset]')) {
       const key = link.dataset.asset;
       link.href = assets[key] || releasePage;
       link.classList.toggle('is-unavailable', !assets[key] && link.classList.contains('secondary-download'));
-      if (link.classList.contains('button')) link.textContent = assets[key] ? `${labels[key]} ↓` : 'View releases ↗';
+      if (link.classList.contains('button')) link.textContent = assets[key] ? `${labels[key]} ↓` : 'View downloads ↗';
       else link.textContent = labels[key];
     }
     const available = Object.keys(assets).length > 0;
-    document.querySelector('#releaseStatus').textContent = available ? `Latest release ${release.tag_name}` : 'Desktop downloads are being prepared. Check back soon.';
+    document.querySelector('#releaseStatus').textContent = available ? `Version ${release.tag_name.replace(/^v/, '')}` : 'View downloads on GitHub Releases.';
     const main = document.querySelector('#primaryDownload');
-    if (platform === 'windows' && assets.windows) { main.href = assets.windows; main.textContent = 'Download for Windows ↓'; }
-    else if (platform === 'linux' && assets.linux) { main.href = assets.linux; main.textContent = 'Download for Linux ↓'; }
-    else { main.href = '#downloads'; main.textContent = platform === 'mac' ? 'Download for Mac ↓' : 'Get Playlista ↓'; }
+    main.textContent = 'Get Playlista for free ↓';
+    main.href = platform === 'windows' && assets.windows ? assets.windows
+      : platform === 'linux' && assets.linux ? assets.linux
+        : available ? '#downloads' : `${releasePage}/latest`;
+    const descriptions = { windows: 'Windows · 64-bit installer', linux: 'Linux · 64-bit AppImage', mac: 'macOS · Apple Silicon & Intel' };
+    document.querySelector('#heroAvailability').textContent = available && platform ? descriptions[platform] : 'Windows · macOS · Linux';
+    main.setAttribute('aria-label', available && platform ? `Get Playlista for ${platform === 'mac' ? 'macOS' : platform === 'windows' ? 'Windows' : 'Linux'} for free` : 'Get Playlista for free');
   }
   async function request(url) {
     const controller = new AbortController();

@@ -6,7 +6,7 @@ const path = require('node:path');
 const { detectPlatform, releaseAssets } = require('../website/downloads');
 
 function release() {
-  return { tag_name: 'v1.2.3', assets: ['windows-x64-setup.exe', 'windows-x64-portable.exe', 'mac-arm64.dmg', 'mac-x64.dmg', 'linux-x64.AppImage', 'linux-x64.tar.gz'].map((suffix) => {
+  return { tag_name: 'v1.2.3', assets: ['windows-x64-setup.exe', 'windows-x64-portable.exe', 'mac-arm64.dmg', 'mac-x64.dmg', 'linux-x86_64.AppImage', 'linux-x64.tar.gz'].map((suffix) => {
     const name = `Playlista-1.2.3-${suffix}`;
     return { name, state: 'uploaded', browser_download_url: `https://github.com/playlista-app/playlista/releases/download/v1.2.3/${name}` };
   }) };
@@ -16,6 +16,7 @@ test('public downloads match real platform assets and never link to foreign or d
   const data = release();
   assert.deepEqual(Object.keys(releaseAssets(data)), ['windows', 'portable', 'mac-arm64', 'mac-x64', 'linux', 'linux-archive']);
   assert.equal(releaseAssets(data)['mac-arm64'].endsWith('mac-arm64.dmg'), true);
+  assert.equal(releaseAssets(data).linux.endsWith('linux-x86_64.AppImage'), true, 'electron-builder names its x64 AppImage x86_64');
   assert.deepEqual(releaseAssets({ ...data, draft: true }), {});
   assert.deepEqual(releaseAssets({ ...data, prerelease: true }), {});
   assert.deepEqual(releaseAssets({ ...data, tag_name: null }), {});

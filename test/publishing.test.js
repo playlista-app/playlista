@@ -1,9 +1,19 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { downloadableAssets } = require('../scripts/publish-downloads');
+const { downloadableAssets, findRelease } = require('../scripts/publish-downloads');
 const { siteFiles } = require('../scripts/publish-site');
 
-const release = () => ({ tag_name: 'v1.2.3', draft: true, assets: ['windows-x64-setup.exe', 'windows-x64-portable.exe', 'mac-arm64.dmg', 'mac-x64.dmg', 'linux-x64.AppImage', 'linux-x64.tar.gz'].map((suffix) => ({ name: `Playlista-1.2.3-${suffix}`, size: 100, state: 'uploaded' })).concat([{ name: 'SHA256SUMS.txt', size: 100 }]) });
+const release = () => ({ tag_name: 'v1.2.3', draft: true, assets: ['windows-x64-setup.exe', 'windows-x64-portable.exe', 'mac-arm64.dmg', 'mac-x64.dmg', 'linux-x86_64.AppImage', 'linux-x64.tar.gz'].map((suffix) => ({ name: `Playlista-1.2.3-${suffix}`, size: 100, state: 'uploaded' })).concat([{ name: 'SHA256SUMS.txt', size: 100 }]) });
+
+test('draft releases are resolved by ID instead of the public tag endpoint', () => {
+  const data = release();
+  const value = findRelease('v1.2.3', {
+    run: () => JSON.stringify({ apiUrl: 'https://api.github.com/repos/playlista-app/playlista/releases/123' }),
+    read: (method, endpoint) => { assert.equal(method, 'GET'); assert.equal(endpoint, 'repos/playlista-app/playlista/releases/123'); return data; },
+  });
+  assert.equal(value.draft, true);
+  assert.throws(() => findRelease('v1.2.3', { run: () => JSON.stringify({ apiUrl: 'https://api.github.com/repos/other/repo/releases/123' }) }), /Unexpected/);
+});
 
 test('public binary publishing requires every platform and the checksum manifest', () => {
   assert.equal(downloadableAssets(release()).length, 7);
