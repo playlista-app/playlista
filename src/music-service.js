@@ -42,7 +42,7 @@ function suggested(song, matches) {
   return matches[0]?.id || '';
 }
 
-function createMusicService({ bridge: requestBridge, storage = store, credentialFile, platform = process.platform, now = Date.now,
+function createMusicService({ bridge: requestBridge, storage = store, credentialFile, encryption, platform = process.platform, now = Date.now,
   provider = 'youtube', label = 'YouTube Music', credentialField = 'headers', validatePlaylistId = playlistId,
   candidatePattern = /^[A-Za-z0-9_-]{11}$/, playlistUrl = (id) => `https://music.youtube.com/playlist?list=${encodeURIComponent(id)}`,
   validateConnection = (value) => Boolean(value?.auth && value.account?.name) } = {}) {
@@ -52,7 +52,7 @@ function createMusicService({ bridge: requestBridge, storage = store, credential
   const bridge = (input, options) => requestBridge(input, { ...options, signal: options?.signal || shutdown.signal });
   const secretsFile = credentialFile || process.env[`PLAYLISTA_${provider.toUpperCase()}_CREDENTIALS_FILE`] || path.join(
     path.dirname(process.env.PLAYLISTA_SETTINGS_FILE || path.join(__dirname, '..', 'data/app-settings.json')), `${provider}-connection.json`);
-  const credentials = createCredentialStore({ file: secretsFile, bridge, platform });
+  const credentials = createCredentialStore({ file: secretsFile, bridge, platform, encryption });
   let session = null;
   let pending = null;
   let plan = null;
@@ -82,7 +82,7 @@ function createMusicService({ bridge: requestBridge, storage = store, credential
     try { runtime = { available: true, ...await bridge({ action: 'probe' }) }; }
     catch (error) { runtime = { available: false, error: error.message }; }
     return { provider: provider === 'spotify' ? 'spotapi' : 'ytmusicapi', connected: Boolean(session), account: session?.account || null, remembered: Boolean(session?.remembered),
-      canRemember: platform === 'win32', runtime, error: restoreError };
+      canRemember: await credentials.canRemember(), runtime, error: restoreError };
   }
 
   async function connection() {
@@ -106,7 +106,7 @@ function createMusicService({ bridge: requestBridge, storage = store, credential
       if (!validateConnection(result)) throw fail('YouTube Music did not identify this account. Connect again.');
       const token = randomUUID();
       pending = { ...result, token, expires: now() + 5 * 60_000 };
-      return { token, account: result.account, canRemember: platform === 'win32' };
+      return { token, account: result.account, canRemember: await credentials.canRemember() };
     } finally { busy = false; }
   }
 

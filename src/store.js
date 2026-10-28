@@ -625,6 +625,7 @@ async function updateTagMetadata(input) {
 }
 
 module.exports = {
+  waitForWrites: async () => { await playlistWriteQueue.catch(() => {}); await tagMetadataQueue.catch(() => {}); },
   getPlaylistsDirectory: () => playlistsDirectory,
   setPlaylistsDirectory: serializeAccess(async (directory) => {
     if (typeof directory !== 'string' || !path.isAbsolute(directory)) {

@@ -1,0 +1,118 @@
+name: Desktop builds
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows
+            arch: x64
+          - os: macos-15-intel
+            platform: macos
+            arch: x64
+          - os: macos-15
+            platform: macos
+            arch: arm64
+          - os: ubuntu-22.04
+            platform: linux
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Verify release tag and native architecture
+        shell: bash
+        env:
+          RELEASE_REF: ${{ github.ref }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          node -e 'if(process.arch!==process.env.TARGET_ARCH)throw Error("Native architecture mismatch"); if(process.env.RELEASE_REF.startsWith("refs/tags/")&&process.env.RELEASE_REF!=="refs/tags/v"+require("./package.json").version)throw Error("Tag must match package.json version")'
+      - run: npm ci
+      - name: Install Linux desktop libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2 libgbm1 libfuse2
+      - name: Build native helpers and desktop packages
+        run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ runner.os == 'macOS' && secrets.CSC_LINK != '' && 'true' || 'false' }}
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.CSC_KEY_PASSWORD || '' }}
+          WIN_CSC_LINK: ${{ runner.os == 'Windows' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+      - name: Run regression tests
+        run: npm test
+        env:
+          PLAYLISTA_PYTHON: ${{ runner.os == 'Windows' && '.build-venv/Scripts/python.exe' || '.build-venv/bin/python' }}
+      - name: Smoke-test the packaged desktop app
+        if: runner.os != 'Linux'
+        run: npm run test:packaged
+      - name: Smoke-test the packaged desktop app under Xvfb
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:packaged
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Playlista-${{ matrix.platform }}-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+          path: |
+            dist/Playlista-*.exe
+            dist/Playlista-*.dmg
+            dist/Playlista-*.zip
+            dist/Playlista-*.AppImage
+            dist/Playlista-*.tar.gz
+
+  draft-release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Create draft release with checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cd release-assets
+          sha256sum Playlista-* > SHA256SUMS.txt
+          if gh release view "$RELEASE_TAG" --json isDraft > ../release-status.json; then
+            node -e 'if(!require("../release-status.json").isDraft)throw Error("Refusing to overwrite a published release")'
+            gh release upload "$RELEASE_TAG" ./* --clobber
+          else
+            extra=()
+            if [[ "$RELEASE_TAG" == *-* ]]; then extra+=(--prerelease); fi
+            gh release create "$RELEASE_TAG" --verify-tag --draft --generate-notes --title "Playlista ${RELEASE_TAG#v}" "${extra[@]}" ./*
+          fi

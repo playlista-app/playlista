@@ -15,7 +15,11 @@ function createPythonBridge({ provider, script, setupCommand }) {
   return function runBridge(input, { timeout = 90_000, signal, onProgress } = {}) {
     return new Promise((resolve, reject) => {
       if (signal?.aborted) { reject(new StoreError(`${provider} operation cancelled.`, 409)); return; }
-      const child = spawn(pythonExecutable(), ['-I', script], {
+      const bundled = process.env.PLAYLISTA_HELPERS_DIR;
+      const integration = path.basename(path.dirname(script));
+      const name = `${integration}-helper`;
+      const command = bundled ? path.join(bundled, name, `${name}${process.platform === 'win32' ? '.exe' : ''}`) : pythonExecutable();
+      const child = spawn(command, bundled ? [] : ['-I', script], {
         windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
       });
       let output = '';
@@ -46,7 +50,9 @@ function createPythonBridge({ provider, script, setupCommand }) {
         finish(new StoreError(`${provider} operation cancelled.`, 409));
       };
       signal?.addEventListener('abort', abort, { once: true });
-      child.on('error', () => finish(new StoreError(`Python 3.10+ is needed for ${provider}. Install Python and run npm run ${setupCommand}.`, 503)));
+      child.on('error', () => finish(new StoreError(bundled
+        ? `The bundled ${provider} helper could not start. Reinstall Playlista.`
+        : `Python 3.10+ is needed for ${provider}. Install Python and run npm run ${setupCommand}.`, 503)));
       child.stdout.on('data', (chunk) => {
         output += chunk.toString('utf8');
         let newline;

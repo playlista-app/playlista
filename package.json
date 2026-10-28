@@ -3,14 +3,33 @@
   "version": "0.1.0",
   "private": true,
   "description": "A local editor and validator for portable .lista playlists",
+  "main": "desktop/main.js",
+  "productName": "Playlista",
+  "author": "Playlista contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/playlista-app/playlista.git"
+  },
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "start": "node src/server.js",
+    "desktop": "electron .",
+    "build:helpers": "node scripts/build-helpers.js",
+    "dist": "npm run build:helpers && electron-builder --config desktop/builder.cjs --publish never",
+    "test:desktop": "node scripts/smoke-desktop.js",
+    "test:packaged": "node scripts/smoke-desktop.js --packaged",
+    "release": "node scripts/release.js",
     "setup:youtube": "node scripts/setup-integration.js youtube",
     "setup:spotify": "node scripts/setup-integration.js spotify",
     "lint:playlists": "node src/cli.js",
     "test": "node --test"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "2.6.2",
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0",
+    "semver": "7.7.4"
   }
 }

@@ -16,6 +16,7 @@ const {
   getPlaylistsDirectory,
   setPlaylistsDirectory,
   StoreError,
+  waitForWrites,
 } = require('./store');
 const appSettings = require('./app-settings');
 const github = require('./github');
@@ -268,33 +269,46 @@ function createServer(syncManager, youtube, spotify) {
   return server;
 }
 
-async function startServer({ port = Number.parseInt(process.env.PORT || String(DEFAULT_PORT), 10), host = '127.0.0.1', youtube: suppliedYouTube, spotify: suppliedSpotify } = {}) {
+async function startServer({ port = Number.parseInt(process.env.PORT || String(DEFAULT_PORT), 10), host = '127.0.0.1', youtube: suppliedYouTube, spotify: suppliedSpotify, encryption } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new Error('PORT must be a number between 1 and 65535.');
   }
   await appSettings.initialize({ setPlaylistsDirectory, getPlaylistsDirectory });
   await getLibrary();
   const syncManager = createSyncManager();
-  const youtube = suppliedYouTube || createYouTubeService();
-  const spotify = suppliedSpotify || createSpotifyService();
+  const youtube = suppliedYouTube || createYouTubeService({ encryption });
+  const spotify = suppliedSpotify || createSpotifyService({ encryption });
   const server = createServer(syncManager, youtube, spotify);
-  server.once('close', () => { syncManager.stop(); youtube.close(); spotify.close(); });
-  await new Promise((resolve, reject) => {
+  const stopServices = () => { syncManager.stop(); youtube.close(); spotify.close(); };
+  server.once('close', stopServices);
+  try { await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(port, host, resolve);
-  });
+  }); } catch (error) {
+    youtube.close();
+    spotify.close();
+    throw error;
+  }
   syncManager.start();
-  return { server, address: server.address() };
+  let closing;
+  const close = () => {
+    if (!closing) closing = (async () => {
+      stopServices();
+      await new Promise((resolve) => server.close(resolve));
+      await syncManager.whenIdle();
+      await waitForWrites();
+      await appSettings.waitForWrites();
+    })();
+    return closing;
+  };
+  return { server, address: server.address(), close };
 }
 
 if (require.main === module) {
   const port = Number.parseInt(process.env.PORT || String(DEFAULT_PORT), 10);
   startServer({ port })
-    .then(({ address, server }) => {
-      const shutdown = () => {
-        server.closeAllConnections?.();
-        server.close();
-      };
+    .then(({ address, close }) => {
+      const shutdown = () => { close().catch((error) => { console.error(error.message); process.exitCode = 1; }); };
       process.once('SIGINT', shutdown);
       process.once('SIGTERM', shutdown);
       const actualPort = typeof address === 'object' ? address.port : port;

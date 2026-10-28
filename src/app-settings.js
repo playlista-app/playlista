@@ -109,4 +109,5 @@ function persist() {
   return saved;
 }
 
-module.exports = { initialize, getRawSettings, publicSettings, saveSettings, selectGithubLogin, updateSyncState };
+module.exports = { initialize, getRawSettings, publicSettings, saveSettings, selectGithubLogin, updateSyncState,
+  waitForWrites: () => persistQueue.catch(() => {}) };

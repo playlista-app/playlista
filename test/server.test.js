@@ -17,6 +17,7 @@ test('the local API exposes sync status, migrates old settings and closes its se
   Object.assign(process.env, overrides);
   await fs.writeFile(overrides.PLAYLISTA_SETTINGS_FILE, JSON.stringify({ playlistDirectory: libraryDirectory, github: { folder: 'playlists' }, syncBase: {}, spotify: { clientId: 'obsolete-client-id' } }));
   let server;
+  let running;
   try {
     const youtube = require('../src/youtube').createYouTubeService({
       credentialFile: path.join(directory, 'youtube.json'),
@@ -42,7 +43,7 @@ test('the local API exposes sync status, migrates old settings and closes its se
         throw new Error(`Unexpected ${input.action}`);
       },
     });
-    const running = await require('../src/server').startServer({ port: 0, youtube, spotify });
+    running = await require('../src/server').startServer({ port: 0, youtube, spotify });
     server = running.server;
     const base = `http://127.0.0.1:${running.address.port}`;
     const get = async (url) => {
@@ -122,10 +123,15 @@ test('the local API exposes sync status, migrates old settings and closes its se
     assert.equal((await fetch(base + '/youtube-export-ui.js')).status, 200);
     assert.equal((await fetch(base + '/music-import-ui.js')).status, 200);
     assert.doesNotMatch(html, /githubFolderInput/);
+    const writing = require('../src/store').createPlaylist({ name: 'Saved while quitting', tags: ['shutdown'] });
+    const closing = running.close();
+    assert.equal(running.close(), closing, 'shutdown is idempotent');
+    const [lastPlaylist] = await Promise.all([writing, closing]);
+    assert.match(await fs.readFile(path.join(libraryDirectory, lastPlaylist.file), 'utf8'), /Saved while quitting/);
+    assert.equal(server.address(), null);
   } finally {
     if (server) {
-      server.closeAllConnections?.();
-      await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await running.close();
       assert.equal(server.address(), null);
     }
     for (const [key, value] of Object.entries(previous)) {

@@ -1,6 +1,21 @@
 # Playlista
 
-Playlista keeps playlist definitions as portable `.lista` text files. [SPEC.md](SPEC.md) defines the format. The Node app includes a validator and a small local editor; it has no external package dependencies.
+Playlista keeps playlist definitions as portable `.lista` text files. [SPEC.md](SPEC.md) defines the format. The Node app includes a validator and a local editor with no Node runtime dependencies. The optional Electron desktop app bundles the interface, backend, and music integration helpers. See [desktop builds and releases](docs/RELEASING.md).
+
+## Desktop app
+
+Release builds target Windows x64, macOS Intel and Apple Silicon, and Linux x64. The desktop app starts and stops its own local backend; users do not need Node, Python, or a terminal. GitHub backup is optional and currently requires an installed, authenticated [GitHub CLI](https://cli.github.com/).
+
+The installed app saves playlists to `Documents/Playlista/playlists` by default; select another existing folder in Settings to use an existing library. Settings, tag metadata, and encrypted connections are stored in Electron's per-user `Playlista` app-data directory, outside the installation. Updating the app does not replace your library. Desktop development uses a separate `Playlista Development` app-data directory. It does not automatically import the repository's personal `playlists/` or `data/` folders.
+
+To develop the desktop app, install Node 24+ and run:
+
+```sh
+npm ci
+npm run desktop
+```
+
+Music integration setup commands below still apply to desktop development. Downloaded release builds include the helpers already. Local builds and the release command are documented in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Run the local app
 
@@ -70,7 +85,7 @@ On Windows PowerShell, use `npm.cmd run setup:spotify` if execution policy block
 
 In **Settings → Spotify**, sign into [Spotify's web player](https://open.spotify.com) with the account you want. Open developer tools (F12), then **Application → Cookies → open.spotify.com** (Firefox: **Storage → Cookies**). Copy the value of **sp_dc** and paste it into Playlista. A full Cookie header, cookies JSON, cookie-export arrays, and Chrome's **Copy as fetch (Node.js)** are also accepted. Click **Check account**, review the actual Spotify account name and username, then **Use this account**. No password is requested.
 
-The cookie grants account access. The input is cleared after checking; only the required Spotify session cookies are retained. **Remember on this computer** encrypts the saved connection with Windows DPAPI in ignored `data/spotify-connection.json`, bound to the current Windows user. Other operating systems use memory-only connections. Disconnect removes the saved connection. Cookies never go into `.lista` files, app settings, URLs, or GitHub sync. Tests can override the credential file with `PLAYLISTA_SPOTIFY_CREDENTIALS_FILE`.
+The cookie grants account access. The input is cleared after checking; only the required Spotify session cookies are retained. **Remember on this computer** uses the OS-backed credential encryption described below. Disconnect removes the saved connection. Cookies never go into `.lista` files, app settings, URLs, or GitHub sync. Tests can override the credential file with `PLAYLISTA_SPOTIFY_CREDENTIALS_FILE`.
 
 In **Import → Spotify**, choose a source from **Your library** (Browse playlists) or **Playlist link**, then choose **New playlist** or **Add to existing** and use the single import button. Selecting a source highlights it and reveals its destination controls. Successful sources get an Imported badge. Imports stay on the Import page and briefly highlight the affected playlist in the sidebar. The adapter paginates both the library and playlist tracks and includes playlists in library folders. It preserves artist/title queries, descriptions, order, and duplicates; unavailable tracks, local files, and podcast episodes are skipped and counted. Followed playlists can be imported when the connected web session can read their contents. Incomplete responses fail before local files are written. The 10,000-song import limit and opt-in GitHub auto-sync apply as with other local edits.
 
@@ -97,7 +112,9 @@ In **Settings → YouTube Music**, connect using a signed-in browser session:
 3. Copy its **request headers**, including Cookie and Authorization. Paste them into Playlista. Raw headers, Chrome's **Copy as fetch (Node.js)**, and the library's `browser.json` JSON are supported. See the [library's browser authentication guide](https://ytmusicapi.readthedocs.io/en/stable/setup/browser.html).
 4. Click **Check account**, review the returned account name and handle, then **Use this account**. This does not require creating a Google Cloud app. Reconnect with fresh headers if the browser session expires or you sign out.
 
-Treat these headers as credentials. They are sent only to the local helper and YouTube Music, cleared from the input after checking, and never included in `.lista` files, GitHub sync, URLs, or app settings. With **Remember on this computer**, Windows DPAPI encrypts the connection for the current Windows user in ignored `data/youtube-connection.json`. Disconnect removes that saved connection. On other operating systems, connections remain in memory until the app exits; persistent OS credential storage can be added alongside a desktop wrapper. Tests can override the credential path with `PLAYLISTA_YOUTUBE_CREDENTIALS_FILE`.
+Treat these headers as credentials. They are sent only to the local helper and YouTube Music, cleared from the input after checking, and never included in `.lista` files, GitHub sync, URLs, or app settings. **Remember on this computer** uses OS-backed credential encryption; disconnect removes the saved connection. Tests can override the credential path with `PLAYLISTA_YOUTUBE_CREDENTIALS_FILE`.
+
+The desktop app uses Electron's `safeStorage`: Windows DPAPI, macOS Keychain, or an available Linux keyring. Encrypted connection files live beside desktop app settings. If secure storage is unavailable, the Remember option is hidden and connections last for the session; Linux's `basic_text` fallback is never used. In browser/server mode, Windows retains the existing Python/DPAPI storage in ignored `data/`; macOS and Linux remain session-only. Existing Windows DPAPI connection files can still be read when using the same settings directory.
 
 **Import → YouTube Music:** choose a source from **Your library** or **Playlist link**, then choose **New playlist** or **Add to existing** and import. Imports stay on the Import page so you can import several playlists in succession; the affected playlist briefly flashes green in the sidebar. Artist/title queries, playlist description, track order, and duplicates are preserved. Unavailable tracks and recognized podcast episodes are skipped and counted. Imports use the same validated local writes as other edits and participate in GitHub auto-sync when enabled. A single import is limited to 10,000 songs.
 

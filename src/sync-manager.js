@@ -93,6 +93,7 @@ function createSyncManager({ service = github, settings = appSettings, debounceM
       cancelScheduledSync();
     },
     reconfigure,
+    whenIdle: () => queue.catch(() => {}),
     notifyLocalChange,
     sync,
     testConnection: () => enqueue(() => service.testConnection(), 'checking'),
