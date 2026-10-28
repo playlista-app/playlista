@@ -1,6 +1,6 @@
 {
   "name": "playlista",
-  "version": "0.1.0",
+  "version": "1.0.2",
   "private": true,
   "description": "A local editor and validator for portable .lista playlists",
   "main": "desktop/main.js",
