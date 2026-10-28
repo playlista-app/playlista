@@ -17,7 +17,7 @@
     "start": "node src/server.js",
     "desktop": "electron .",
     "build:helpers": "node scripts/build-helpers.js",
-    "dist": "npm run build:helpers && electron-builder --config desktop/builder.cjs --publish never",
+    "dist": "npm run build:helpers && node scripts/package-desktop.js",
     "test:desktop": "node scripts/smoke-desktop.js",
     "test:packaged": "node scripts/smoke-desktop.js --packaged",
     "release": "node scripts/release.js",
