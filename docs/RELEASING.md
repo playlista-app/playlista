@@ -89,6 +89,10 @@ Optional repository Actions secrets:
 
 Use a consistent macOS signature to keep Keychain access stable across updates. Auto-updates are not wired up yet: install a newer release manually, keeping the same playlist folder and app-data directory.
 
+`npm run dist` invokes `scripts/package-desktop.js`, which removes empty certificate-path variables before starting electron-builder. Missing Actions secrets expand to empty strings; passing `CSC_LINK=""` directly to electron-builder makes its Mac signer interpret the checkout directory as a certificate and fail with “not a file.” Configured certificates and intentionally empty certificate passwords are retained.
+
+For public downloads while the app source stays private, use `npm run release:publish -- v<version>` after every platform completes. See [website and public downloads](WEBSITE.md).
+
 ## Data and integrations
 
 Installed apps default to `Documents/Playlista/playlists`; the selected playlist folder can be changed in Settings. Settings/tag metadata/encrypted connections live in Electron's per-user app-data folder named `Playlista`. Windows portable refers to installation only; it uses the same per-user storage rather than placing credentials beside the executable. Development desktop storage is separate (`Playlista Development`). Existing browser-mode libraries are not moved automatically: select their folder in Settings. App updates and installer uninstall preserve the configured library; the installer does not delete app data.

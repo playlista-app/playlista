@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f8f8f2">
+  <meta name="description" content="Your playlists belong to you. Create, organize, and keep them as simple text files. Import and export with Spotify and YouTube Music, with optional GitHub backup.">
+  <meta property="og:title" content="Playlista — your taste, yours to keep">
+  <meta property="og:description" content="A local home for your playlists. Plain text files, Spotify and YouTube Music, and optional GitHub backup.">
+  <meta property="og:image" content="https://playlista-app.github.io/assets/playlist.webp">
+  <meta property="og:url" content="https://playlista-app.github.io/">
+  <title>Playlista — your taste, yours to keep</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="downloads.js" defer></script>
+  <script src="site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="nav-wrap">
+    <nav class="navigation container" aria-label="Main navigation">
+      <a class="brand" href="#" aria-label="Playlista home"><img src="assets/favicon.svg" width="32" height="32" alt="">playlista<span class="brand-dot">.</span></a>
+      <div class="nav-links"><a href="#inside">Inside the app</a><a href="#format">The format</a></div>
+      <a class="nav-download" href="#downloads">Get Playlista <span aria-hidden="true">↗</span></a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero container" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="little-disc" aria-hidden="true"></span> GOOD MUSIC DESERVES A PERMANENT HOME</p>
+        <h1 id="hero-title">Your taste.<br>Your playlists.<br><em>Yours to keep.</em></h1>
+        <p class="hero-description">All those songs you spent years collecting? Keep the list. Organize it your way, then take it to Spotify or YouTube Music.</p>
+        <div class="hero-actions"><a id="primaryDownload" class="button primary" href="#downloads">Get Playlista <span aria-hidden="true">↓</span></a><a class="text-link" href="#inside">Take a look <span aria-hidden="true">↘</span></a></div>
+        <p class="availability" id="heroAvailability">For Windows, macOS &amp; Linux. Runs on your computer.</p>
+      </div>
+      <div class="file-illustration" aria-label="A playlist stored as a readable text file">
+        <div class="file-label"><span class="file-icon" aria-hidden="true">♫</span><span>skatepark-anthems<span class="extension">.lista</span></span><span class="file-size">plain text</span></div>
+        <pre class="playlist-code"><code><span class="code-key">version:</span> 2
+<span class="code-key">playlist:</span> Skatepark Anthems
+<span class="code-key">description:</span> The long way home.
+<span class="code-key">tags:</span> [nostalgia, hype]
+<span class="code-muted">created: 2026-10-28T10:00:00.000Z
+updated: 2026-10-28T10:00:00.000Z
+---</span>
+<span class="code-artist">Sum 41</span> <span class="separator">&gt;</span> In Too Deep
+<span class="code-artist">Green Day</span> <span class="separator">&gt;</span> Basket Case
+<span class="code-artist">blink-182</span> <span class="separator">&gt;</span> All The Small Things
+<span class="code-artist">Reel Big Fish</span> <span class="separator">&gt;</span> Sell Out <span class="code-tag">&gt; [hype]</span></code></pre>
+        <div class="file-bottom"><span class="file-status"><span aria-hidden="true">✓</span> Readable by you. Portable by design.</span><span aria-hidden="true">.lista</span></div>
+        <span class="ownership-note">A playlist is a list.<br>It should be yours.</span>
+      </div>
+    </section>
+
+    <section class="preview-section container" id="inside" aria-labelledby="preview-title">
+      <div class="section-topline"><div><p class="eyebrow">LESS ADMIN. MORE ANTHEMS.</p><h2 id="preview-title">A home for every kind of playlist.</h2></div><span class="sample-label">The real app · sample library</span></div>
+      <div class="preview-tabs" role="tablist" aria-label="App previews">
+        <button id="tab-playlist" type="button" role="tab" aria-controls="app-preview" aria-selected="true" data-preview="playlist">The playlist</button>
+        <button id="tab-library" type="button" role="tab" aria-controls="app-preview" aria-selected="false" data-preview="library" tabindex="-1">The bigger picture</button>
+      </div>
+      <div class="app-frame" id="app-preview" role="tabpanel" aria-labelledby="tab-playlist">
+        <div class="window-chrome" aria-hidden="true"><span></span><span></span><span></span><p>playlista</p></div>
+        <img id="appScreenshot" src="assets/playlist.webp" width="1340" height="900" alt="Playlista showing a sample Skatepark Anthems playlist, its tags, inline quick add, and the playlist hierarchy in the sidebar." fetchpriority="high">
+      </div>
+      <div class="preview-caption"><p id="previewCaption">Quick add, drag to reorder, and tag the songs that belong together.</p><span>Local files. No Playlista account.</span></div>
+    </section>
+
+    <section class="features container" aria-label="How your library fits together">
+      <article class="feature feature-family"><span class="feature-number">01 / ORGANIZE</span><h2>Big genres.<br>Little obsessions.</h2><p>Give a playlist a parent. Punk can hold 90s Punk and Skatepark Anthems. Open Punk to hear the whole family; open a child to keep it focused.</p><div class="family-diagram" aria-label="Punk contains 90s Punk and Skatepark Anthems"><div class="family-root"><span aria-hidden="true">⌄</span> Punk <span class="tiny-count">all child tracks</span></div><div class="family-children"><div>90s Punk</div><div class="family-highlight">Skatepark Anthems <span aria-hidden="true">♫</span></div></div></div></article>
+      <article class="feature feature-tags"><span class="feature-number">02 / CONNECT THE DOTS</span><h2>Different playlists.<br>Same feeling.</h2><p>Some songs just belong together. Use shared tags to find the hype tracks, the late-night tracks, or the songs you can’t help singing along to.</p><div class="tag-cloud" aria-label="Example tags"><span class="tag tag-peach">nostalgia</span><span class="tag tag-lilac">late night</span><span class="tag tag-green">hype</span><span class="tag tag-yellow">singalong</span><span class="tag tag-blue">on repeat</span><span class="tag tag-peach">skate</span></div></article>
+      <article class="feature feature-services"><span class="feature-number">03 / TAKE THEM WITH YOU</span><h2>Keep the playlist.<br>Change the player.</h2><p>Import from Spotify or YouTube Music. Export to either when you want to listen. Review which songs matched, and which need another look.</p><div class="service-route" aria-label="Spotify and YouTube Music connect with your local lista files"><span class="service-badge spotify">Spotify</span><span class="route-line" aria-hidden="true">↔</span><span class="local-file">.lista</span><span class="route-line" aria-hidden="true">↔</span><span class="service-badge youtube">YouTube<br>Music</span></div></article>
+    </section>
+
+    <section class="format-section" id="format" aria-labelledby="format-title"><div class="container format-layout">
+      <div><p class="eyebrow">SMALL FILES. LONG SHELF LIFE.</p><h2 id="format-title">Your library has<br>an <em>escape hatch.</em></h2><p>Every playlist is a UTF-8 text file. No database to untangle. Open it in a text editor, put it in a folder, or let Playlista do the writing.</p><p>Optional GitHub backup keeps another copy and a history of changes. Your local files stay usable offline.</p><a class="text-link" href="assets/example.lista" download>Download the example <span aria-hidden="true">↗</span></a></div>
+      <div class="format-details"><div><span aria-hidden="true">Aa</span><h3>A format you can read</h3><p>Artist, song, and optional tags. A little structure without getting in the way.</p></div><div><span aria-hidden="true">⌁</span><h3>Your folders, your rules</h3><p>Filenames and folders are up to you. Playlist parents define the relationships.</p></div><div><span aria-hidden="true">↗</span><h3>Backup, if you want it</h3><p>Opt into GitHub sync with a repository you control. No Playlista cloud subscription.</p></div></div>
+    </div></section>
+
+    <section class="downloads container" id="downloads" aria-labelledby="download-title">
+      <p class="eyebrow">MAKE ROOM FOR THE NEXT GREAT SONG</p><h2 id="download-title">Keep a little more<br>of <em>what you love.</em></h2><p class="download-intro">Choose your desktop. Your playlists come with you.</p>
+      <p id="releaseStatus" class="release-status" role="status">Checking the latest release…</p>
+      <div class="download-grid">
+        <article class="download-card" data-platform="windows"><div class="platform-heading"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m2 5 8-1v7H2V5Zm10-1.3L22 2v9H12V3.7ZM2 13h8v7l-8-1v-6Zm10 0h10v9l-10-1.7V13Z"/></svg><h3>Windows</h3><span class="your-system" hidden>Your system</span></div><p>64-bit · installer or portable</p><a class="button download-link" data-asset="windows" href="https://github.com/playlista-app/playlista-app.github.io/releases">View releases <span aria-hidden="true">↗</span></a><a class="secondary-download" data-asset="portable" href="https://github.com/playlista-app/playlista-app.github.io/releases">Portable version</a></article>
+        <article class="download-card" data-platform="mac"><div class="platform-heading"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M16.4 1c.2 1.6-.6 3-1.5 4-.9 1-2.3 1.7-3.8 1.5-.2-1.5.6-3 1.5-4 .9-.9 2.4-1.5 3.8-1.5ZM20 17.2c-.5 1.2-.8 1.8-1.5 2.9-1 1.6-2.3 3.5-4 3.5-1.5 0-1.9-1-4-1s-2.6 1-4.1 1c-1.6 0-2.8-1.8-3.8-3.4C-.1 15.7-.5 9.5 2.2 7c1.3-1.2 3.2-1.4 4.7-.8 1.2.5 1.9.9 2.8.9.8 0 1.5-.4 2.8-.9 1.3-.5 3.1-.3 4.4.6-3.8 2.1-3.2 7.6 1.1 9.4Z"/></svg><h3>macOS</h3><span class="your-system" hidden>Your system</span></div><p>Choose your Mac’s processor</p><a class="button download-link" data-asset="mac-arm64" href="https://github.com/playlista-app/playlista-app.github.io/releases">Apple Silicon <span aria-hidden="true">↓</span></a><a class="secondary-download" data-asset="mac-x64" href="https://github.com/playlista-app/playlista-app.github.io/releases">Intel Mac</a></article>
+        <article class="download-card" data-platform="linux"><div class="platform-heading"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m3 6 5 5-5 5 1.5 1.5L11 11 4.5 4.5 3 6Zm9 11h9v2h-9v-2Z"/></svg><h3>Linux</h3><span class="your-system" hidden>Your system</span></div><p>64-bit · AppImage or archive</p><a class="button download-link" data-asset="linux" href="https://github.com/playlista-app/playlista-app.github.io/releases">View releases <span aria-hidden="true">↗</span></a><a class="secondary-download" data-asset="linux-archive" href="https://github.com/playlista-app/playlista-app.github.io/releases">Download .tar.gz</a></article>
+      </div>
+      <p class="download-notes">Music connections are optional and use unofficial local integrations. GitHub backup requires GitHub CLI. <a href="https://github.com/playlista-app/playlista-app.github.io/releases">Release notes &amp; all downloads <span aria-hidden="true">↗</span></a></p>
+      <noscript><p>JavaScript is off. Find the available installers on the <a href="https://github.com/playlista-app/playlista-app.github.io/releases">releases page</a>.</p></noscript>
+    </section>
+  </main>
+  <footer class="footer container"><a class="brand" href="#"><img src="assets/favicon.svg" width="26" height="26" alt="">playlista<span class="brand-dot">.</span></a><p>For the love of the list.</p><a href="https://github.com/playlista-app/playlista-app.github.io">On GitHub <span aria-hidden="true">↗</span></a></footer>
+</body>
+</html>
